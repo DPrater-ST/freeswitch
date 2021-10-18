@@ -1470,10 +1470,29 @@ void conference_loop_output(conference_member_t *member)
 
 		if (switch_core_session_dequeue_event(member->session, &event, SWITCH_FALSE) == SWITCH_STATUS_SUCCESS) {
 			if (event->event_id == SWITCH_EVENT_MESSAGE) {
+				
 				char *from = switch_event_get_header(event, "from");
-				char *to = switch_event_get_header(event, "to");
+				//char *to = switch_event_get_header(event, "to");
 				char *body = switch_event_get_body(event);
+				char * ptr = NULL;
+                                conference_member_t * msg_member = NULL;
+				switch_core_session_message_t msg = { 0 };
 
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "conference message received : from %s, body %s\n", from, body);
+
+				// Removing the ip from the from
+                                ptr = strchr(from, '@');
+                                if(ptr) {
+                                        *ptr = '\0';
+                                }
+
+				ptr = strchr(from, '_');
+				if(ptr) {
+					*ptr = '\0';
+				}
+		
+
+				/*
 				if (to && from && body) {
 					if (strchr(to, '+') && strncmp(to, CONF_CHAT_PROTO, strlen(CONF_CHAT_PROTO))) {
 						switch_event_del_header(event, "to");
@@ -1485,6 +1504,24 @@ void conference_loop_output(conference_member_t *member)
 					}
 					chat_send(event);
 				}
+				*/
+
+				switch_mutex_lock(member->conference->member_mutex);
+				for (msg_member = member->conference->members; msg_member; msg_member = msg_member->next) {
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "conference message received 1111111 : from %s, body %s\n", from, body);
+					if(member == msg_member) {
+						continue;
+					}
+					
+					msg.from = from;
+					msg.message_id = SWITCH_MESSAGE_INDICATE_MESSAGE;
+					msg.string_array_arg[2] = body;
+					switch_core_session_receive_message(msg_member->session, &msg);
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "conference message received 222222 : from %s, body %s\n", from, body);
+				}
+				switch_mutex_unlock(member->conference->member_mutex);
+
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "conference message received 33333333 : from %s, body %s\n", from, body);
 			}
 			switch_event_destroy(&event);
 		}
