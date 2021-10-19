@@ -1851,13 +1851,19 @@ static switch_status_t sofia_receive_message(switch_core_session_t *session, swi
 				ok = 1;
 			}
 
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "Sending Message ok %d\n", ok);
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Sending Message ok %d\n", ok);
 
 			if (ok) {
 				const char *pl = NULL;
 
 				memset(from, 0x0, sizeof(from));
-    	                    	snprintf(from, sizeof(from) - 1, "sip:%s@%s:%s\n", msg->from, to_host, to_port);
+				if(to_port != NULL) {
+    	                    		snprintf(from, sizeof(from) - 1, "sip:%s@%s:%s", msg->from, to_host, to_port);
+				} else {
+					snprintf(from, sizeof(from) - 1, "sip:%s@%s", msg->from, to_host);
+				}
+
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "----------------- from %s\n", from);
 
 				if (!zstr(msg->string_array_arg[0]) && !zstr(msg->string_array_arg[1])) {
 					switch_snprintf(ct, sizeof(ct), "%s/%s", msg->string_array_arg[0], msg->string_array_arg[1]);
