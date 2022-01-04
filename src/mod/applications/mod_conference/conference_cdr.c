@@ -65,8 +65,9 @@ const char *conference_cdr_audio_flow(conference_member_t *member)
 
 char *conference_cdr_rfc4579_render(conference_obj_t *conference, switch_event_t *event, switch_event_t *revent)
 {
-	switch_xml_t xml, x_tag, x_tag1, x_tag2, x_tag3, x_tag4;
+	switch_xml_t xml, x_tag, x_tag1, x_tag2, x_tag3, x_tag4, x_tag5, x_flags;
 	char tmp[30];
+	char i[30] = "";
 	const char *domain;	const char *name;
 	char *dup_domain = NULL;
 	char *uri;
@@ -103,6 +104,12 @@ char *conference_cdr_rfc4579_render(conference_obj_t *conference, switch_event_t
 
 	switch_xml_set_attr_d(xml, "state", "full");
 	switch_xml_set_attr_d(xml, "xmlns", "urn:ietf:params:xml:ns:conference-info");
+
+	if (conference_utils_test_flag(conference, CFLAG_LOCKED)) {
+		switch_xml_set_attr_d(xml, "locked", "true");
+	} else {
+		switch_xml_set_attr_d(xml, "locked", "false");
+	}
 
 
 	uri = switch_mprintf("sip:%s@%s", name, domain);
@@ -248,6 +255,7 @@ char *conference_cdr_rfc4579_render(conference_obj_t *conference, switch_event_t
 
 		if (np->member) {
 			const char *var;
+			switch_bool_t hold = conference_utils_member_test_flag(np->member, MFLAG_HOLD);
 			//char buf[1024];
 
 			//switch_snprintf(buf, sizeof(buf), "conference_%s_%s_%s", conference->name, conference->domain, np->cp->caller_id_number);
@@ -306,6 +314,28 @@ char *conference_cdr_rfc4579_render(conference_obj_t *conference, switch_event_t
 					abort();
 				}
 				switch_xml_set_txt_d(x_tag4, switch_channel_test_flag(channel, CF_HOLD) ? "sendonly" : "sendrecv");
+
+				x_flags = switch_xml_add_child_d(x_tag1, "flags", off2++);
+				switch_assert(x_flags);
+
+				switch_snprintf(i, sizeof(i), "%d", np->member->id);
+				x_tag5 = switch_xml_add_child_d(x_flags, "id", off2++);
+				switch_xml_set_txt_d(x_tag5, i);
+
+				x_tag5 = switch_xml_add_child_d(x_flags, "can_hear", off2++);
+				switch_xml_set_txt_d(x_tag5, (!hold && conference_utils_member_test_flag(np->member, MFLAG_CAN_HEAR)) ? "true" : "false");
+
+				x_tag5 = switch_xml_add_child_d(x_flags, "can_see", off2++);
+				switch_xml_set_txt_d(x_tag5, (!hold && conference_utils_member_test_flag(np->member, MFLAG_CAN_SEE)) ? "true" : "false");
+
+				x_tag5 = switch_xml_add_child_d(x_flags, "can_be_seen", off2++);
+				switch_xml_set_txt_d(x_tag5, (!hold && conference_utils_member_test_flag(np->member, MFLAG_CAN_BE_SEEN)) ? "true" : "false");
+
+				x_tag5 = switch_xml_add_child_d(x_flags, "can_speak", off2++);
+				switch_xml_set_txt_d(x_tag5, (!hold && conference_utils_member_test_flag(np->member, MFLAG_CAN_SPEAK)) ? "true" : "false");
+
+				x_tag5 = switch_xml_add_child_d(x_flags, "talking", off2++);
+				switch_xml_set_txt_d(x_tag5, (!hold && conference_utils_member_test_flag(np->member, MFLAG_TALKING)) ? "true" : "false");
 
 			}
 		}

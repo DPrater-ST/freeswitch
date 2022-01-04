@@ -1830,8 +1830,11 @@ static switch_status_t sofia_receive_message(switch_core_session_t *session, swi
 	case SWITCH_MESSAGE_INDICATE_MESSAGE:
 		{
 			char ct[256] = "text/plain";
+			char from[512];
 			int ok = 0;
 			const char *session_id_header = sofia_glue_session_id_header(session, tech_pvt->profile);
+			const char * to_host = switch_channel_get_variable(channel, "sip_to_host");
+			const char * to_port = switch_channel_get_variable(channel, "sip_to_port");
 
 			if (!zstr(msg->string_array_arg[3]) && !strcmp(msg->string_array_arg[3], tech_pvt->caller_profile->uuid)) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "Not sending message back to sender\n");
@@ -1846,8 +1849,19 @@ static switch_status_t sofia_receive_message(switch_core_session_t *session, swi
 				ok = 1;
 			}
 
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Sending Message ok %d\n", ok);
+
 			if (ok) {
 				const char *pl = NULL;
+
+				memset(from, 0x0, sizeof(from));
+				if(to_port != NULL) {
+						snprintf(from, sizeof(from) - 1, "sip:%s@%s:%s", msg->from, to_host, to_port);
+				} else {
+						snprintf(from, sizeof(from) - 1, "sip:%s@%s", msg->from, to_host);
+				}
+
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "----------------- from %s\n", from);
 
 				if (!zstr(msg->string_array_arg[0]) && !zstr(msg->string_array_arg[1])) {
 					switch_snprintf(ct, sizeof(ct), "%s/%s", msg->string_array_arg[0], msg->string_array_arg[1]);
@@ -1859,6 +1873,7 @@ static switch_status_t sofia_receive_message(switch_core_session_t *session, swi
 
 				nua_message(tech_pvt->nh,
 							SIPTAG_CONTENT_TYPE_STR(ct),
+							SIPTAG_FROM_STR(from),
 							TAG_IF(!zstr(tech_pvt->user_via), SIPTAG_VIA_STR(tech_pvt->user_via)),
 							TAG_IF(pl, SIPTAG_PAYLOAD_STR(pl)),
 							TAG_IF(!zstr(session_id_header), SIPTAG_HEADER_STR(session_id_header)),
@@ -5376,6 +5391,8 @@ void general_event_handler(switch_event_t *event)
 					nua_handle_t *nh;
 					char *route_uri = NULL;
 					char *sip_sub_st = NULL;
+					sip_cseq_t *cseq = NULL;
+					uint32_t callsequence;
 
 					dst = sofia_glue_get_destination((char *) contact_uri);
 
@@ -5405,10 +5422,13 @@ void general_event_handler(switch_event_t *event)
 						sip_sub_st = "terminated;reason=noresource";
 					}
 
+					callsequence = sofia_presence_get_cseq(profile);
+					cseq = sip_cseq_create(nh->nh_home, callsequence, SIP_METHOD_NOTIFY);
+
 					nua_notify(nh,
 							   NUTAG_NEWSUB(1), TAG_IF(sip_sub_st, SIPTAG_SUBSCRIPTION_STATE_STR(sip_sub_st)),
 							   TAG_IF(dst->route_uri, NUTAG_PROXY(dst->route_uri)), TAG_IF(dst->route, SIPTAG_ROUTE_STR(dst->route)), TAG_IF(call_id, SIPTAG_CALL_ID_STR(call_id)),
-							   SIPTAG_EVENT_STR(es), SIPTAG_CONTENT_TYPE_STR(ct), TAG_IF(!zstr(body), SIPTAG_PAYLOAD_STR(body)),
+							   SIPTAG_CSEQ(cseq), SIPTAG_EVENT_STR(es), SIPTAG_CONTENT_TYPE_STR(ct), TAG_IF(!zstr(body), SIPTAG_PAYLOAD_STR(body)),
 							   TAG_IF(!zstr(extra_headers), SIPTAG_HEADER_STR(extra_headers)), 
 							   TAG_END());
 
