@@ -1927,6 +1927,9 @@ SWITCH_STANDARD_APP(conference_function)
 		switch_channel_set_app_flag_key("conference_silent", channel, CONF_SILENT_REQ);
 	}
 
+	// Setting a varaible to support remote messages
+        switch_channel_set_variable(channel, "fs_send_unsupported_message", "true");
+
 	switch_core_session_video_reset(session);
 
 	switch_channel_set_flag(channel, CF_CONFERENCE);

@@ -1841,6 +1841,8 @@ static switch_status_t sofia_receive_message(switch_core_session_t *session, swi
 				break;
 			}
 
+				
+
 			if (switch_stristr("send_message", tech_pvt->x_freeswitch_support_remote)) {
 				ok = 1;
 			}
