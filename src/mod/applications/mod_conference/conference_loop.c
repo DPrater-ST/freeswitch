@@ -1470,20 +1470,65 @@ void conference_loop_output(conference_member_t *member)
 
 		if (switch_core_session_dequeue_event(member->session, &event, SWITCH_FALSE) == SWITCH_STATUS_SUCCESS) {
 			if (event->event_id == SWITCH_EVENT_MESSAGE) {
-				char *from = switch_event_get_header(event, "from");
-				char *to = switch_event_get_header(event, "to");
+				
+				char *from_header = switch_event_get_header(event, "from");
+				//char *to = switch_event_get_header(event, "to");
 				char *body = switch_event_get_body(event);
+				char * ptr = NULL;
+                                conference_member_t * msg_member = NULL;
+				switch_core_session_message_t msg = { 0 };
+				char from[512];
 
-				if (to && from && body) {
-					if (strchr(to, '+') && strncmp(to, CONF_CHAT_PROTO, strlen(CONF_CHAT_PROTO))) {
-						switch_event_del_header(event, "to");
-						switch_event_add_header(event, SWITCH_STACK_BOTTOM,
-												"to", "%s+%s@%s", CONF_CHAT_PROTO, member->conference->name, member->conference->domain);
-					} else {
-						switch_event_del_header(event, "to");
-						switch_event_add_header(event, SWITCH_STACK_BOTTOM, "to", "%s", member->conference->name);
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "conference message received : from %s, body %s\n", from_header, body);
+
+				if(from_header && body) {
+
+					memset(from, 0x00, sizeof(from));
+					snprintf(from, sizeof(from) - 1, "%s", from_header);
+
+					// Removing the ip from the from
+                   	            	 ptr = strchr(from, '@');
+                                	if(ptr) {
+                                        *ptr = '\0';
+                                	}
+
+					ptr = strrchr(from, '_');
+					if(ptr) {
+						*ptr = '\0';
 					}
-					chat_send(event);
+		
+
+					/*
+					if (to && from && body) {
+						if (strchr(to, '+') && strncmp(to, CONF_CHAT_PROTO, strlen(CONF_CHAT_PROTO))) {
+							switch_event_del_header(event, "to");
+							switch_event_add_header(event, SWITCH_STACK_BOTTOM,
+													"to", "%s+%s@%s", CONF_CHAT_PROTO, member->conference->name, member->conference->domain);
+						} else {
+							switch_event_del_header(event, "to");
+							switch_event_add_header(event, SWITCH_STACK_BOTTOM, "to", "%s", member->conference->name);
+						}
+						chat_send(event);
+					}
+					*/
+
+					switch_mutex_lock(member->conference->member_mutex);
+					for (msg_member = member->conference->members; msg_member; msg_member = msg_member->next) {
+						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "conference message received 1111111 : from %s, body %s\n", from, body);
+						// Make sure don't send it to self
+						if(member == msg_member) {
+							continue;
+						}
+					
+						msg.from = from;
+						msg.message_id = SWITCH_MESSAGE_INDICATE_MESSAGE;
+						msg.string_array_arg[2] = body;
+						switch_core_session_receive_message(msg_member->session, &msg);
+						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "conference message received 222222 : from %s, body %s\n", from, body);
+					}
+					switch_mutex_unlock(member->conference->member_mutex);
+
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "conference message received 33333333 : from %s, body %s\n", from, body);
 				}
 			}
 			switch_event_destroy(&event);
