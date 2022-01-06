@@ -1319,6 +1319,9 @@ void conference_xlist(conference_obj_t *conference, switch_xml_t x_conference, i
 		x_tag = switch_xml_add_child_d(x_flags, "can_see", count++);
 		switch_xml_set_txt_d(x_tag, (!hold && conference_utils_member_test_flag(member, MFLAG_CAN_SEE)) ? "true" : "false");
 
+		x_tag = switch_xml_add_child_d(x_flags, "can_be_seen", count++);
+		switch_xml_set_txt_d(x_tag, (!hold && conference_utils_member_test_flag(member, MFLAG_CAN_BE_SEEN)) ? "true" : "false");
+		
 		x_tag = switch_xml_add_child_d(x_flags, "can_speak", count++);
 		switch_xml_set_txt_d(x_tag, (!hold && conference_utils_member_test_flag(member, MFLAG_CAN_SPEAK)) ? "true" : "false");
 
@@ -1450,6 +1453,7 @@ void conference_jlist(conference_obj_t *conference, cJSON *json_conferences)
                                                                   cJSON_CreateString(member->video_reservation_id) : cJSON_CreateNull());
 		ADDBOOL(json_conference_member_flags, "can_hear", !hold && conference_utils_member_test_flag(member, MFLAG_CAN_HEAR));
 		ADDBOOL(json_conference_member_flags, "can_see", !hold && conference_utils_member_test_flag(member, MFLAG_CAN_SEE));
+		ADDBOOL(json_conference_member_flags, "can_be_seen", !hold && conference_utils_member_test_flag(member, MFLAG_CAN_BE_SEEN));
 		ADDBOOL(json_conference_member_flags, "can_speak", !hold && conference_utils_member_test_flag(member, MFLAG_CAN_SPEAK));
 		ADDBOOL(json_conference_member_flags, "hold", hold);
 		ADDBOOL(json_conference_member_flags, "mute_detect", conference_utils_member_test_flag(member, MFLAG_MUTE_DETECT));
