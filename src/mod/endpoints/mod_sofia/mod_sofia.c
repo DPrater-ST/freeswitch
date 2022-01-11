@@ -1858,9 +1858,9 @@ static switch_status_t sofia_receive_message(switch_core_session_t *session, swi
 
 				memset(from, 0x0, sizeof(from));
 				if(to_port != NULL) {
-						snprintf(from, sizeof(from) - 1, "sip:%s@%s:%s", msg->from, to_host, to_port);
+    	     snprintf(from, sizeof(from) - 1, "sip:%s@%s:%s", msg->from, to_host, to_port);
 				} else {
-						snprintf(from, sizeof(from) - 1, "sip:%s@%s", msg->from, to_host);
+					snprintf(from, sizeof(from) - 1, "sip:%s@%s", msg->from, to_host);
 				}
 
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "----------------- from %s\n", from);
