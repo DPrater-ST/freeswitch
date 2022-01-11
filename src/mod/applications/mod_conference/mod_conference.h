@@ -1085,6 +1085,8 @@ switch_status_t conference_text_thread_callback(switch_core_session_t *session, 
 void *SWITCH_THREAD_FUNC conference_video_muxing_write_thread_run(switch_thread_t *thread, void *obj);
 void conference_video_launch_layer_thread(conference_member_t *member);
 void conference_video_wake_layer_thread(conference_member_t *member);
+switch_status_t conference_api_sub_list_vid_layout(conference_obj_t *conference, switch_stream_handle_t *stream, int argc, char **argv);
+
 
 int conference_member_noise_gate_check(conference_member_t *member);
 void conference_member_check_channels(switch_frame_t *frame, conference_member_t *member, switch_bool_t in);

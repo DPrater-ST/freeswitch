@@ -577,6 +577,8 @@ void conference_event_adv_layout(conference_obj_t *conference, mcu_canvas_t *can
 	cJSON *msg, *data, *obj;
 	int i = 0;
 
+
+
 	if (!conference->info_event_channel) {
 		return;
 	}
@@ -624,6 +626,7 @@ void conference_event_adv_layout(conference_obj_t *conference, mcu_canvas_t *can
 
 	switch_mutex_unlock(canvas->mutex);
 
+
 	switch_event_channel_broadcast(conference->info_event_channel, &msg, "mod_conference", conference_globals.event_channel_id);
 
 }
@@ -645,6 +648,7 @@ void conference_event_adv_la(conference_obj_t *conference, conference_member_t *
 		int i;
 
 		snprintf(idstr, sizeof(idstr), "%d", member->id);
+
 		msg = cJSON_CreateObject();
 		data = json_add_child_obj(msg, "pvtData", NULL);
 
@@ -957,6 +961,7 @@ void conference_event_pres_handler(switch_event_t *event)
 			switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "call-direction", conference->count == 1 ? "outbound" : "inbound");
 			switch_event_fire(&event);
 		}
+		conference_event_send_rfc(conference); // Generate conference data event with RFC CDR
 		switch_thread_rwlock_unlock(conference->rwlock);
 	} else if (switch_event_create(&event, SWITCH_EVENT_PRESENCE_IN) == SWITCH_STATUS_SUCCESS) {
 		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "proto", CONF_CHAT_PROTO);

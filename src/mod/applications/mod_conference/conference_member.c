@@ -247,6 +247,7 @@ switch_status_t conference_member_add_event_data(conference_member_t *member, sw
 
 	if (member->session) {
 		switch_channel_t *channel = switch_core_session_get_channel(member->session);
+		switch_caller_profile_t *profile = switch_channel_get_caller_profile(channel);
 
 		if (member->verbose_events) {
 			switch_channel_event_set_data(channel, event);
@@ -255,6 +256,11 @@ switch_status_t conference_member_add_event_data(conference_member_t *member, sw
 		}
 		switch_event_add_header(event, SWITCH_STACK_BOTTOM, "Video", "%s",
 								switch_channel_test_flag(switch_core_session_get_channel(member->session), CF_VIDEO) ? "true" : "false" );
+
+		if(profile != NULL) {
+			switch_event_add_header(event, SWITCH_STACK_BOTTOM, "caller_id_name", "%s", profile->caller_id_name);
+			switch_event_add_header(event, SWITCH_STACK_BOTTOM, "caller_id_number", "%s", profile->caller_id_number);
+		}
 
 	}
 

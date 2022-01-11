@@ -124,7 +124,9 @@ api_command_t conference_api_sub_commands[] = {
 	{"vid-fgimg", (void_fn_t) & conference_api_sub_canvas_fgimg, CONF_API_SUB_ARGS_SPLIT, "vid-fgimg", "<file> | clear [<canvas-id>]"},
 	{"vid-bgimg", (void_fn_t) & conference_api_sub_canvas_bgimg, CONF_API_SUB_ARGS_SPLIT, "vid-bgimg", "<file> | clear [<canvas-id>]"},
 	{"vid-bandwidth", (void_fn_t) & conference_api_sub_vid_bandwidth, CONF_API_SUB_ARGS_SPLIT, "vid-bandwidth", "<BW>"},
-	{"vid-personal", (void_fn_t) & conference_api_sub_vid_personal, CONF_API_SUB_ARGS_SPLIT, "vid-personal", "[on|off]"}
+	{"vid-personal", (void_fn_t) & conference_api_sub_vid_personal, CONF_API_SUB_ARGS_SPLIT, "vid-personal", "[on|off]"},
+	{"list-vid-layout", (void_fn_t) & conference_api_sub_list_vid_layout, CONF_API_SUB_ARGS_SPLIT, "list-vid-layout", "<canvas_id>"}
+
 };
 
 switch_status_t conference_api_sub_pause_play(conference_obj_t *conference, switch_stream_handle_t *stream, int argc, char **argv)
@@ -4068,6 +4070,104 @@ switch_status_t conference_api_sub_set(conference_obj_t *conference,
 	}
 
 	return ret_status;
+}
+
+
+static cJSON *get_canvas_info(mcu_canvas_t *canvas)
+{
+        cJSON *obj = cJSON_CreateObject();
+
+        cJSON_AddItemToObject(obj, "canvasID", cJSON_CreateNumber(canvas->canvas_id));
+        cJSON_AddItemToObject(obj, "totalLayers", cJSON_CreateNumber(canvas->total_layers));
+        cJSON_AddItemToObject(obj, "layersUsed", cJSON_CreateNumber(canvas->layers_used));
+        cJSON_AddItemToObject(obj, "layoutFloorID", cJSON_CreateNumber(canvas->layout_floor_id));
+        if (canvas->vlayout) {
+                cJSON_AddItemToObject(obj, "layoutName", cJSON_CreateString(canvas->vlayout->name));
+        }
+
+        return obj;
+}
+
+
+void conference_api_layout(conference_obj_t *conference, mcu_canvas_t *canvas, video_layout_t *vlayout,switch_stream_handle_t *stream)
+{
+        cJSON *msg, *data, *obj;
+        int i = 0;
+                char *ebuf;
+
+
+
+        msg = cJSON_CreateObject();
+        data = json_add_child_obj(msg, "eventData", NULL);
+
+        cJSON_AddItemToObject(msg, "eventChannel", cJSON_CreateString(conference->info_event_channel));
+        cJSON_AddItemToObject(data, "contentType", cJSON_CreateString("layout-info"));
+
+        switch_mutex_lock(canvas->mutex);
+
+        if ((obj = get_canvas_info(canvas))) {
+                cJSON *array = cJSON_CreateArray();
+                for (i = 0; i < vlayout->layers; i++) {
+                        cJSON *layout = cJSON_CreateObject();
+                        int scale = vlayout->images[i].scale;
+                        int hscale = vlayout->images[i].hscale ? vlayout->images[i].hscale : scale;
+
+                        cJSON_AddItemToObject(layout, "x", cJSON_CreateNumber(vlayout->images[i].x));
+                        cJSON_AddItemToObject(layout, "y", cJSON_CreateNumber(vlayout->images[i].y));
+                        cJSON_AddItemToObject(layout, "scale", cJSON_CreateNumber(vlayout->images[i].scale));
+                        cJSON_AddItemToObject(layout, "hscale", cJSON_CreateNumber(hscale));
+                        cJSON_AddItemToObject(layout, "scale", cJSON_CreateNumber(scale));
+                        cJSON_AddItemToObject(layout, "zoom", cJSON_CreateNumber(vlayout->images[i].zoom));
+                        cJSON_AddItemToObject(layout, "border", cJSON_CreateNumber(vlayout->images[i].border));
+                        cJSON_AddItemToObject(layout, "floor", cJSON_CreateNumber(vlayout->images[i].floor));
+                        cJSON_AddItemToObject(layout, "overlap", cJSON_CreateNumber(vlayout->images[i].overlap));
+                        cJSON_AddItemToObject(layout, "screenWidth", cJSON_CreateNumber((uint32_t)(canvas->width * scale / VIDEO_LAYOUT_SCALE)));
+                        cJSON_AddItemToObject(layout, "screenHeight", cJSON_CreateNumber((uint32_t)(canvas->height * hscale / VIDEO_LAYOUT_SCALE)));
+                        cJSON_AddItemToObject(layout, "xPOS", cJSON_CreateNumber((int)(canvas->width * vlayout->images[i].x / VIDEO_LAYOUT_SCALE)));
+                        cJSON_AddItemToObject(layout, "yPOS", cJSON_CreateNumber((int)(canvas->height * vlayout->images[i].y / VIDEO_LAYOUT_SCALE)));
+                        cJSON_AddItemToObject(layout, "resID", cJSON_CreateString(vlayout->images[i].res_id));
+                        cJSON_AddItemToObject(layout, "audioPOS", cJSON_CreateString(vlayout->images[i].audio_position));
+                        cJSON_AddItemToArray(array, layout);
+                }
+
+
+                cJSON_AddItemToObject(obj, "canvasLayouts", array);
+
+                cJSON_AddItemToObject(obj, "scale", cJSON_CreateNumber(VIDEO_LAYOUT_SCALE));
+                cJSON_AddItemToObject(data, "canvasInfo", obj);
+        }
+                        switch_mutex_unlock(canvas->mutex);
+                        ebuf = cJSON_Print(msg);
+                        stream->write_function(stream, "%s", ebuf);
+                        switch_safe_free(ebuf);
+
+
+}
+
+
+switch_status_t conference_api_sub_list_vid_layout(conference_obj_t *conference, switch_stream_handle_t *stream, int argc, char **argv)
+{
+
+        int i=0;
+        if(argc < 3){
+                i=0;
+        } else {
+                i=atoi(argv[2]);
+        }
+        switch_mutex_lock(conference_globals.setup_mutex);
+
+                                if (conference->canvases[i]) {
+                                        conference_api_layout(conference, conference->canvases[i], conference->canvases[i]->vlayout,stream);
+                                } else {
+                                        stream->write_function(stream, "-ERR  Canvas ID: %d does not exist", i);
+                                }
+
+
+        switch_mutex_unlock(conference_globals.setup_mutex);
+
+
+
+        return SWITCH_STATUS_SUCCESS;
 }
 
 
