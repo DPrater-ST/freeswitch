@@ -94,6 +94,7 @@
 #define CONFERENCE_CANVAS_DEFAULT_WIDTH 1280
 #define CONFERENCE_CANVAS_DEFAULT_HIGHT 720
 #define MAX_CANVASES 20
+#define MAX_LAYOUT_CANVASES 7
 #define SUPER_CANVAS_ID MAX_CANVASES
 #define test_eflag(conference, flag) ((conference)->eflags & flag)
 
@@ -904,6 +905,8 @@ struct conference_member {
 	mcu_layer_cam_opts_t cam_opts;
 	switch_core_video_filter_t video_filters;
 	int video_manual_border;
+	switch_queue_t *img_queue[MAX_LAYOUT_CANVASES];
+	int vid_no_access_other_canvas;
 };
 
 typedef enum {
@@ -1301,8 +1304,13 @@ void conference_loop_deaf_off(conference_member_t *member, caller_control_action
 void conference_set_variable(conference_obj_t *conference, const char *var, const char *val);
 const char *conference_get_variable(conference_obj_t *conference, const char *var);
 
+// New functions
+
+int is_video_layout_exist(conference_obj_t *conference, char * video_layout_name);
 
 /* Global Structs */
+
+
 
 
 /* API Interface Function sub-commands */
