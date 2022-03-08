@@ -3897,6 +3897,7 @@ conference_obj_t *conference_new(char *name, conference_xml_cfg_t cfg, switch_co
 					canvas->video_layout_group = switch_core_strdup(conference->pool, conference->video_layout_group);
 				}
 
+				canvas->accept_other_canvas_images = SWITCH_TRUE; // Only if we set it from the canvas
 				conference_video_attach_canvas(conference, canvas, 0);
 				conference_video_launch_muxing_thread(conference, canvas, 0);
 				switch_mutex_unlock(conference->canvas_mutex);

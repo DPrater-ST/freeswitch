@@ -572,6 +572,7 @@ typedef struct mcu_canvas_s {
 	codec_set_t *write_codecs[MAX_MUX_CODECS];
 	int write_codecs_count;
 	switch_bool_t disable_auto_clear;
+	switch_bool_t accept_other_canvas_images;
 } mcu_canvas_t;
 
 /* Record Node */

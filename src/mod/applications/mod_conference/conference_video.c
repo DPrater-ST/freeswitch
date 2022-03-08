@@ -3213,9 +3213,6 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 		int j = 0, personal = conference_utils_test_flag(conference, CFLAG_PERSONAL_CANVAS) ? 1 : 0;
 		int video_count = 0;
 
-
-//		canvas->total_layers = conference->count;
-
 		if (!personal) {
 			if (canvas->new_vlayout && switch_mutex_trylock(conference->canvas_mutex) == SWITCH_STATUS_SUCCESS) {
 				conference_video_init_canvas_layers(conference, canvas, NULL, SWITCH_TRUE);
@@ -3354,7 +3351,8 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 			video_layout_t *vlayout = NULL;
 
 			if (canvas->video_layout_group && (lg = switch_core_hash_find(conference->layout_group_hash, canvas->video_layout_group))) {
-				if ((vlayout = conference_video_find_best_layout(conference, lg, conference->count - file_count, file_count))) {
+				// If the canvas not accepting other images just pass only canvas video count or pass conference member count
+				if ((vlayout = conference_video_find_best_layout(conference, lg, canvas->accept_other_canvas_images == SWITCH_TRUE ? conference->count : canvas->video_count - file_count, file_count))) {
 					switch_mutex_lock(conference->member_mutex);
 
 					canvas->new_vlayout = vlayout;
@@ -3504,13 +3502,13 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 				}
 			}
 
-
-			/*
-			if (imember->canvas_id > -1 && imember->canvas_id != canvas->canvas_id) {
-				switch_core_session_rwunlock(imember->session);
-				continue;
+			// If the canvas don't receive other members video. Make sure we don't push
+			if(canvas->accept_other_canvas_images == SWITCH_FALSE) { 
+				if (imember->canvas_id > -1 && imember->canvas_id != canvas->canvas_id) {
+					switch_core_session_rwunlock(imember->session);
+					continue;
+				}
 			}
-			*/
 
 			if ((conference_utils_member_test_flag(imember, MFLAG_HOLD) ||
 				(conference_utils_test_flag(imember->conference, CFLAG_VIDEO_MUTE_EXIT_CANVAS) &&
@@ -3549,12 +3547,20 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 					int i = 0;
 					for(i = 0; i < imember->conference->canvas_count; i ++) {
 						if(canvas->canvas_id != i) {
-							// If there is no members on other layouts we shouldn't push anything there.
-							switch_image_t * img_copy = NULL;
-							switch_img_copy(img, &img_copy);
-							if (switch_queue_trypush(imember->img_queue[i], img_copy) != SWITCH_STATUS_SUCCESS) {
-								switch_img_free(&img_copy);
-                                			} 
+							mcu_canvas_t * other_canvas = conference->canvases[i];
+							// We are pushing out images only incase there is a count and accepting other canvas images.
+							switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Checking Pushing the image to canvas->canvas_id %d canvas->canvas_id %d, member->id %d, canvas->accept_other_canvas_images %d, other_canvas->video_count %d\n", i, canvas->canvas_id, imember->id, canvas->accept_other_canvas_images, other_canvas->video_count);
+			
+							if(other_canvas->video_count != 0 && canvas->accept_other_canvas_images == SWITCH_TRUE) {
+								// If there is no members on other layouts we shouldn't push anything there.
+								switch_image_t * img_copy = NULL;
+								switch_img_copy(img, &img_copy);
+								switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Pushing the image to canvas->canvas_id %d canvas->canvas_id %d, member->id %d\n", i, canvas->canvas_id, imember->id);
+			
+								if (switch_queue_trypush(imember->img_queue[i], img_copy) != SWITCH_STATUS_SUCCESS) {
+									switch_img_free(&img_copy);
+								}
+							} 
 						}
 					}
 				}
@@ -3562,6 +3568,7 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 				void * pop = NULL;
 				if (switch_queue_trypop(imember->img_queue[canvas->canvas_id], &pop) == SWITCH_STATUS_SUCCESS && pop) {
 					img = (switch_image_t *)pop;
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Got image canvas->canvas_id %d, member->id %d\n", canvas->canvas_id, imember->id);
 				}
 			}
 	
@@ -3602,14 +3609,11 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 			if (imember->video_layer_id > -1) {
 				layer = &canvas->layers[imember->video_layer_id];
 				if (layer->member_id != (int)imember->id) {
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Some thing Wrong. Layer found but the layer member and member id is different canvas->canvas_id %d, layer->member_id %d, imember->id %d, imember->video_layer_id %d\n", canvas->canvas_id, layer->member_id, imember->id, imember->video_layer_id);
 					imember->video_layer_id = -1;
 					layer = NULL;
 					imember->layer_timeout = DEFAULT_LAYER_TIMEOUT;
 				}
-			} else {
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Some thing Wrong Video layer id is -1. Layer found but the layer member and member id is different canvas->canvas_id %d, imember->id %d, imember->video_layer_id %d\n", canvas->canvas_id, imember->id, imember->video_layer_id);
-			}
+			} 
 
 			switch_mutex_lock(imember->flag_mutex);
 			if (imember->avatar_png_img) {
@@ -4239,7 +4243,7 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 				conference_video_check_recording(conference, canvas, &write_frame);
 			}
 
-			/*
+			
 			if (conference->canvas_count > 1) {
 				switch_image_t *img_copy = NULL;
 
@@ -4249,8 +4253,7 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 					switch_img_free(&img_copy);
 				}
 			}
-			*/
-
+			
 			if (min_members && conference_utils_test_flag(conference, CFLAG_MINIMIZE_VIDEO_ENCODING)) {
 				for (i = 0; canvas->write_codecs[i] && switch_core_codec_ready(&canvas->write_codecs[i]->codec) && i < MAX_MUX_CODECS; i++) {
 					canvas->write_codecs[i]->frame.img = write_img;
@@ -4322,6 +4325,9 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 			switch_mutex_unlock(conference->member_mutex);
 		} // NOT PERSONAL
 	}
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "Exiting Here -----------------------------------xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx canvas->canvas_id %d\n", canvas->canvas_id);
+		
 
 	switch_img_free(&file_img);
 
