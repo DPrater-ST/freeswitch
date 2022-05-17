@@ -46,6 +46,7 @@ api_command_t conference_api_sub_commands[] = {
 	{"canvas-auto-clear", (void_fn_t) & conference_api_sub_canvas_auto_clear, CONF_API_SUB_ARGS_SPLIT, "canvas-auto-clear", "<canvas_id> <true|false>"},
 	{"count", (void_fn_t) & conference_api_sub_count, CONF_API_SUB_ARGS_SPLIT, "count", ""},
 	{"list", (void_fn_t) & conference_api_sub_list, CONF_API_SUB_ARGS_SPLIT, "list", "[delim <string>]|[count]"},
+	{"roster", (void_fn_t) & conference_api_sub_roster_list, CONF_API_SUB_ARGS_SPLIT, "roster", ""},
 	{"xml_list", (void_fn_t) & conference_api_sub_xml_list, CONF_API_SUB_ARGS_SPLIT, "xml_list", ""},
 	{"json_list", (void_fn_t) & conference_api_sub_json_list, CONF_API_SUB_ARGS_SPLIT, "json_list", "[compact]"},
 	{"energy", (void_fn_t) & conference_api_sub_energy, CONF_API_SUB_MEMBER_TARGET, "energy", "<member_id|all|last|non_moderator> [<newval>]"},
@@ -236,7 +237,10 @@ switch_status_t conference_api_main_real(const char *cmd, switch_core_session_t 
 				conference_api_sub_count(NULL, stream, argc, argv);
 			} else if (strcasecmp(argv[0], "xml_list") == 0) {
 				conference_api_sub_xml_list(NULL, stream, argc, argv);
-			} else if (strcasecmp(argv[0], "json_list") == 0) {
+			} else if (strcasecmp(argv[0], "roster") == 0) {
+				conference_api_sub_roster_list(NULL, stream, argc, argv);
+			} 
+			else if (strcasecmp(argv[0], "json_list") == 0) {
 				conference_api_sub_json_list(NULL, stream, argc, argv);
 			} else if (strcasecmp(argv[0], "help") == 0 || strcasecmp(argv[0], "commands") == 0) {
 				stream->write_function(stream, "%s\n", api_syntax);
@@ -4168,6 +4172,19 @@ switch_status_t conference_api_sub_list_vid_layout(conference_obj_t *conference,
 
 
         return SWITCH_STATUS_SUCCESS;
+}
+
+switch_status_t conference_api_sub_roster_list(conference_obj_t *conference, switch_stream_handle_t *stream, int argc, char **argv)
+{
+	char *body = NULL;
+
+	if (conference != NULL) {
+		body = conference_cdr_rfc4579_render(conference, NULL, NULL);
+		stream->write_function(stream, "%s", body);
+		switch_safe_free(body);
+	}
+
+	return SWITCH_STATUS_SUCCESS;
 }
 
 
