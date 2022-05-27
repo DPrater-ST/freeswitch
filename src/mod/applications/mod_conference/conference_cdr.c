@@ -287,6 +287,7 @@ char *conference_cdr_rfc4579_render(conference_obj_t *conference, switch_event_t
 			switch_xml_set_txt_d(x_tag4, conference_cdr_audio_flow(np->member));
 
 
+
 			if (switch_channel_test_flag(channel, CF_VIDEO)) {
 				off4 = 0;
 
@@ -336,6 +337,9 @@ char *conference_cdr_rfc4579_render(conference_obj_t *conference, switch_event_t
 
 				x_tag5 = switch_xml_add_child_d(x_flags, "talking", off2++);
 				switch_xml_set_txt_d(x_tag5, (!hold && conference_utils_member_test_flag(np->member, MFLAG_TALKING)) ? "true" : "false");
+
+				x_tag5 = switch_xml_add_child_d(x_flags, "is_moderator",  off2++); 
+                		switch_xml_set_txt_d(x_tag5, conference_utils_member_test_flag(np->member, MFLAG_MOD) ? "true" : "false");
 
 			}
 		}
