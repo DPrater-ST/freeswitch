@@ -2592,6 +2592,16 @@ SWITCH_STANDARD_APP(conference_function)
 
 	/* Clean Up. */
 
+	if (conference->conference_video_mode == CONF_VIDEO_MODE_MUX) {
+		int i = 0;
+
+		for(i = 0; i < MAX_LAYOUT_CANVASES; i ++) {     
+			// We are only keeping 5 frames per in the queue   
+			conference_video_flush_queue(member.img_queue[i], 0);
+		}
+	}
+
+
  done:
 
 	if (locked) {

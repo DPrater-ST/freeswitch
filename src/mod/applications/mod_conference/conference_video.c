@@ -1041,7 +1041,7 @@ void conference_video_detach_video_layer(conference_member_t *member)
 	mcu_canvas_t *canvas = NULL;
 
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "[conference_video_detach_video_layer] here member->canvas_id %d, member->id %d\n", member->canvas_id, member->id);
+	//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "[conference_video_detach_video_layer] here member->canvas_id %d, member->id %d\n", member->canvas_id, member->id);
 
 	if (member->canvas_id < 0) return;
 
@@ -1130,7 +1130,7 @@ void conference_video_detach_video_layer(conference_member_t *member)
 		conference_video_release_canvas(&canvas);
 	}
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "[conference_video_detach_video_layer] Done-Detaching here member->canvas_id %d, member->id %d\n", member->canvas_id, member->id);
+	//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "[conference_video_detach_video_layer] Done-Detaching here member->canvas_id %d, member->id %d\n", member->canvas_id, member->id);
 
 }
 
@@ -1524,7 +1524,6 @@ switch_status_t conference_video_attach_video_layer(conference_member_t *member,
 	}
 
 	if (member->video_layer_id > -1) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "[conference_video_attach_video_layer] Detaching here member->canvas_id %d\n", member->canvas_id);
 		conference_video_detach_video_layer(member);
 	}
 
@@ -1703,9 +1702,7 @@ void conference_video_init_canvas_layers(conference_obj_t *conference, mcu_canva
 
 				conference_video_clear_managed_kps(layer->member);
 				layer->member->video_layer_id = -1;
-
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "[conference_video_init_canvas_layers] Detaching here member->canvas_id %d\n", layer->member->canvas_id);
-
+				//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "[conference_video_init_canvas_layers] Detaching here member->canvas_id %d\n", layer->member->canvas_id);
 				conference_video_detach_video_layer(layer->member);
 			}
 			
@@ -2208,7 +2205,7 @@ void conference_video_canvas_set_fnode_layer(mcu_canvas_t *canvas, conference_fi
 		conference_member_t *member;
 
 		if ((member = conference_member_get(canvas->conference, layer->member_id))) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "[conference_video_canvas_set_fnode_layer] Detaching here member->canvas_id %d\n", member->canvas_id);
+		//	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "[conference_video_canvas_set_fnode_layer] Detaching here member->canvas_id %d\n", member->canvas_id);
 			conference_video_detach_video_layer(member);
 			switch_thread_rwlock_unlock(member->rwlock);
 		}
@@ -3320,12 +3317,8 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 			count_changed = 1;
 		}
 
-		if(conference_count != conference->count && canvas->accept_other_canvas_images) {
-			int new_count = 0;
-			for (imember = conference->members; imember; imember = imember->next) {
-				new_count ++;
-			}
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Count Changes here ----- previous count %d new count %d, new member count %d\n", conference_count, conference->count, new_count);
+		if(conference_count != conference->count && canvas->accept_other_canvas_images == SWITCH_TRUE) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Count Changes here ----- previous count %d new count %d\n", conference_count, conference->count);
 			conference_count = conference->count;
 			count_changed = 1;
 		}
@@ -4973,7 +4966,7 @@ void conference_video_write_frame(conference_obj_t *conference, conference_membe
 {
 	conference_member_t *imember;
 	int want_refresh = 0;
-	unsigned char buf[SWITCH_RTP_MAX_BUF_LEN] = "";
+	unsigned char buf[sizeof(switch_rtp_packet_t)] = ""; 
 	switch_frame_t tmp_frame = { 0 };
 
 	if (switch_test_flag(vid_frame, SFF_CNG) || !vid_frame->packet) {
