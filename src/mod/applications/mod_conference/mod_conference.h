@@ -94,6 +94,7 @@
 #define CONFERENCE_CANVAS_DEFAULT_WIDTH 1280
 #define CONFERENCE_CANVAS_DEFAULT_HIGHT 720
 #define MAX_CANVASES 20
+#define MAX_LAYOUT_CANVASES 7 
 #define SUPER_CANVAS_ID MAX_CANVASES
 #define test_eflag(conference, flag) ((conference)->eflags & flag)
 
@@ -571,6 +572,7 @@ typedef struct mcu_canvas_s {
 	codec_set_t *write_codecs[MAX_MUX_CODECS];
 	int write_codecs_count;
 	switch_bool_t disable_auto_clear;
+	switch_bool_t accept_other_canvas_images; // Wether this canvas accept other images for other canvas or not.
 } mcu_canvas_t;
 
 /* Record Node */
@@ -904,6 +906,10 @@ struct conference_member {
 	mcu_layer_cam_opts_t cam_opts;
 	switch_core_video_filter_t video_filters;
 	int video_manual_border;
+	switch_queue_t *img_queue[MAX_LAYOUT_CANVASES];
+	int vid_no_access_other_canvas; 
+	int org_canvas_id;
+	int org_watching_canvas_id;
 };
 
 typedef enum {
@@ -1060,7 +1066,6 @@ void conference_video_init_canvas_layers(conference_obj_t *conference, mcu_canva
 switch_status_t conference_video_attach_video_layer(conference_member_t *member, mcu_canvas_t *canvas, int idx);
 void conference_video_reset_video_bitrate_counters(conference_member_t *member);
 void conference_video_layer_set_banner(conference_member_t *member, mcu_layer_t *layer, const char *text);
-void conference_video_detach_video_layer(conference_member_t *member);
 void conference_video_check_used_layers(mcu_canvas_t *canvas);
 void conference_video_check_flush(conference_member_t *member, switch_bool_t force);
 void conference_video_set_canvas_letterbox_bgcolor(mcu_canvas_t *canvas, char *color);
@@ -1302,6 +1307,9 @@ void conference_loop_deaf_off(conference_member_t *member, caller_control_action
 void conference_set_variable(conference_obj_t *conference, const char *var, const char *val);
 const char *conference_get_variable(conference_obj_t *conference, const char *var);
 
+
+// New functions
+int is_video_layout_exist(conference_obj_t *conference, char * video_layout_name);
 
 /* Global Structs */
 

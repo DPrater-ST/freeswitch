@@ -1921,6 +1921,9 @@ SWITCH_STANDARD_APP(conference_function)
 	int locked = 0;
 	int mpin_matched = 0;
 	uint32_t *mid;
+	const char *vid_canvas = NULL;
+	const char *vid_watching_canvas = NULL;
+	const char *vid_no_access_other_canvas = NULL;
 
 	if (!switch_channel_test_app_flag_key("conference_silent", channel, CONF_SILENT_DONE) &&
 		(switch_channel_test_flag(channel, CF_RECOVERED) || switch_true(switch_channel_get_variable(channel, "conference_silent_entry")))) {
@@ -1967,7 +1970,6 @@ SWITCH_STANDARD_APP(conference_function)
 		}
 	}
 
-	//if ((v_flags_str = switch_channel_get_variable(channel, "conference_member_flags"))) {
 	if ((v_flags_str = conference_utils_combine_flag_var(session, "conference_member_flags"))) {
 		if (zstr(flags_str)) {
 			flags_str = v_flags_str;
@@ -1978,7 +1980,6 @@ SWITCH_STANDARD_APP(conference_function)
 
 	cflags_str = flags_str;
 
-	//if ((v_cflags_str = switch_channel_get_variable(channel, "conference_flags"))) {
 	if ((v_cflags_str = conference_utils_combine_flag_var(session, "conference_flags"))) {
 		if (zstr(cflags_str)) {
 			cflags_str = v_cflags_str;
@@ -2383,10 +2384,45 @@ SWITCH_STANDARD_APP(conference_function)
 		}
 
 	}
+	
 
 	/* Release the config registry handle */
 	switch_xml_free(cxml);
 	cxml = NULL;
+
+	// Setting Canvases based on User
+	vid_canvas = switch_channel_get_variable(channel, "vid-canvas");
+	vid_watching_canvas = switch_channel_get_variable(channel, "vid-watching-canvas");
+	vid_no_access_other_canvas = switch_channel_get_variable(channel, "vid-no-access-other-canvas");
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "member id %d vid_canvas %s, vid_watching_canvas %s, vid_no_access_other_canvas %s, conference->canvas_count %d ------------\n", member.id, vid_canvas, vid_watching_canvas, vid_no_access_other_canvas, conference->canvas_count);
+
+	if(vid_canvas != NULL && vid_watching_canvas != NULL) {
+		int vid_canvas_id = atoi(vid_canvas);
+		int vid_watching_canvas_id = atoi(vid_watching_canvas);
+
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "vid_canvas %s, vid_watching_canvas %s\n", vid_canvas, vid_watching_canvas);
+
+		if(vid_canvas_id >= 0 &&  vid_watching_canvas_id >= 0) {
+			// Make sure this canvases doesn't cross the actuval canvas thread count
+			if(vid_canvas_id < conference->canvas_count &&  vid_watching_canvas_id < conference->canvas_count) {
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Setting the count vid_canvas_id %d, vid_watching_canvas_id %d\n", vid_canvas_id, vid_watching_canvas_id);
+				member.canvas_id = vid_canvas_id;
+				member.watching_canvas_id = vid_watching_canvas_id;
+				member.org_canvas_id = vid_canvas_id;
+				member.org_watching_canvas_id = vid_watching_canvas_id;
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Setting to member id %d vid_canvas %d, vid_watching_canvas %d\n", member.id, vid_canvas_id, vid_watching_canvas_id);
+			}
+		}
+
+	}
+
+	member.vid_no_access_other_canvas = 0; // Other canvas image data is processed in this canvas
+
+	if(vid_no_access_other_canvas && !strcmp(vid_no_access_other_canvas, "true")) {
+		// This flag indicates don't fetch other canvas data to this specific canvas
+		member.vid_no_access_other_canvas = 1;
+	}	 
 
 	/* if we're using "bridge:" make an outbound call and bridge it in */
 	if (!zstr(bridgeto) && strcasecmp(bridgeto, "none")) {
@@ -2463,8 +2499,14 @@ SWITCH_STANDARD_APP(conference_function)
 
 
 	if (conference->conference_video_mode == CONF_VIDEO_MODE_MUX) {
+		int i = 0;
 		switch_queue_create(&member.video_queue, 200, member.pool);
 		switch_frame_buffer_create(&member.fb, 500);
+
+		for(i = 0; i < MAX_LAYOUT_CANVASES; i ++) {     
+			// We are only keeping 5 frames per in the queue   
+			switch_queue_create(&member.img_queue[i], 5, member.pool);
+		}
 	}
 
 	/* Add the caller to the conference */
@@ -2627,6 +2669,12 @@ SWITCH_STANDARD_APP(conference_function)
 	switch_channel_clear_flag(channel, CF_CONFERENCE);
 
 	switch_core_session_video_reset(session);
+
+	{
+		conference_member_t *pmember = &member;
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "member leaving here %p\n",(void *)pmember);
+		
+	}
 }
 
 
@@ -2693,6 +2741,28 @@ const char *conference_get_variable(conference_obj_t *conference, const char *va
 
 	return NULL;
 }
+
+// Checking is video layout exist or not
+int is_video_layout_exist(conference_obj_t *conference, char * video_layout_name)
+{
+	video_layout_t *vlayout = NULL;
+	char * video_layout_group = NULL;
+
+	if (!strncasecmp(video_layout_name, "group:", 6)) {
+		video_layout_group = video_layout_name + 6;
+	} else {
+		return 1;
+	}
+
+	vlayout = conference_video_get_layout(conference, video_layout_name, video_layout_group);
+	if(vlayout) {
+		return 0;
+	}
+
+	return 1;
+}
+
+
 
 /* create a new conferene with a specific profile */
 conference_obj_t *conference_new(char *name, conference_xml_cfg_t cfg, switch_core_session_t *session, switch_memory_pool_t *pool)
@@ -2797,6 +2867,7 @@ conference_obj_t *conference_new(char *name, conference_xml_cfg_t cfg, switch_co
 	char *scale_h264_canvas_bandwidth = NULL;
 	char *video_codec_config_profile_name = NULL;
 	int tmp;
+	char *canvas_video_layouts = NULL; 
 
 	/* Validate the conference name */
 	if (zstr(name)) {
@@ -2864,6 +2935,9 @@ conference_obj_t *conference_new(char *name, conference_xml_cfg_t cfg, switch_co
 			char buf[128] = "";
 			char *p;
 
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "var %s, val %s\n", var, val);
+			
+
 			if (strchr(var, '_')) {
 				switch_copy_string(buf, var, sizeof(buf));
 				for (p = buf; *p; p++) {
@@ -2929,6 +3003,9 @@ conference_obj_t *conference_new(char *name, conference_xml_cfg_t cfg, switch_co
 				outcall_templ = val;
 			} else if (!strcasecmp(var, "video-layout-name") && !zstr(val)) {
 				video_layout_name = val;
+			} else if (!strcasecmp(var, "video-layouts") && !zstr(val)) { 
+				canvas_video_layouts = val; 
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "video_layouts ------ %s xxxxxxxx\n", val);
 			} else if (!strcasecmp(var, "video-layout-conf") && !zstr(val)) {
 				video_layout_conf = val;
 			} else if (!strcasecmp(var, "video-canvas-count") && !zstr(val)) {
@@ -3740,37 +3817,126 @@ conference_obj_t *conference_new(char *name, conference_xml_cfg_t cfg, switch_co
 	}
 
 	if (conference->conference_video_mode == CONF_VIDEO_MODE_MUX) {
-		video_layout_t *vlayout = conference_video_get_layout(conference, conference->video_layout_name, conference->video_layout_group);
-		
-		if (!vlayout) {
+
+		int loop = 0;
+		int queue_size = 0;
+		char *video_layouts_tmp = NULL;
+		char *ptr = NULL;
+		switch_queue_t * queue;
+		video_layout_t *vlayout = NULL;
+		char video_layouts[1024];
+
+		memset(video_layouts, 0x0, sizeof(video_layouts));
+		snprintf(video_layouts, sizeof(video_layouts) - 1 , "%s", canvas_video_layouts);
+		video_layouts_tmp = video_layouts;
+
+		// We are inserting group video elements in queue
+		switch_queue_create(&queue, 100, pool);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "video_layouts [%s]\n", video_layouts);
+
+		// We are inserting group video elements in queue
+		if(canvas_video_layouts) {
+
+			while(1) {
+
+				if(loop ++ > 100) { // Make sure we don't loop too many iterations
+						break;
+				}
+
+				ptr = strchr(video_layouts_tmp, '|');
+                if(ptr == NULL) {
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "video_layouts : [%s]\n", video_layouts_tmp);
+
+					if(!is_video_layout_exist(conference, video_layouts_tmp)) {
+						if (switch_queue_trypush(queue, video_layouts_tmp) != SWITCH_STATUS_SUCCESS) {
+								// Some thing Wrong we don't have the layout. If we don't have any layout we will just connect with
+						}
+					} else {
+						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "1-Not pushed to Queue video_layout : [%s]\n", video_layouts_tmp);
+					}
+
+					break;
+                }
+
+				*ptr++ = '\0';
+
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "video_layouts : [%s]\n", video_layouts_tmp);
+
+				if(!is_video_layout_exist(conference, video_layouts_tmp)) {
+						if (switch_queue_trypush(queue, video_layouts_tmp) != SWITCH_STATUS_SUCCESS) {
+								// Some thing Wrong we don't have the layout. If we don't have any layout we will just connect with
+								switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Push Error pushed to Queue video_layout : [%s]\n", video_layouts_tmp);
+						}
+				} else {
+						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Not pushed to Queue video_layout : [%s]\n", video_layouts_tmp);
+				}
+
+				video_layouts_tmp = ptr;
+
+			}
+
+		} 
+		else {
+
+			if(!is_video_layout_exist(conference, conference->video_layout_name)) {
+					if (switch_queue_trypush(queue, conference->video_layout_name) != SWITCH_STATUS_SUCCESS) {
+						// Some thing Wrong we don't have the layout. If we don't have any layout we will just connect with
+					}
+			}
+		}
+
+		queue_size = switch_queue_size(queue);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "queue_size --- [%d]\n", queue_size);
+
+		if (!queue_size) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Cannot find layout\n");
 			conference->video_layout_name = conference->video_layout_group = NULL;
 			conference_utils_clear_flag(conference, CFLAG_VIDEO_MUXING);
 		} else {
+
 			int j;
 
 			for (j = 0; j < video_canvas_count; j++) {
 				mcu_canvas_t *canvas = NULL;
+				void * pop = NULL;
+				char * video_layout_name = NULL;
 
 				switch_mutex_lock(conference->canvas_mutex);
-				conference_video_init_canvas(conference, vlayout, &canvas);
+
+				if (switch_queue_trypop(queue, &pop) == SWITCH_STATUS_SUCCESS && pop) {
+					video_layout_name = (char *)pop;
+				}
+
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "video_layout_name [%s]\n", video_layout_name);
+
+				if(video_layout_name) {
+					vlayout = conference_video_get_layout(conference, video_layout_name, video_layout_name + 6);
+					conference_video_init_canvas(conference, vlayout, &canvas);
+					canvas->video_layout_group = switch_core_strdup(conference->pool, video_layout_name + 6);
+				} else {
+					vlayout = conference_video_get_layout(conference, conference->video_layout_name, conference->video_layout_group);
+					conference_video_init_canvas(conference, vlayout, &canvas);
+					canvas->video_layout_group = switch_core_strdup(conference->pool, conference->video_layout_group);
+				}
+
+				canvas->accept_other_canvas_images = SWITCH_TRUE; // Only if we set it from the canvas
 				conference_video_attach_canvas(conference, canvas, 0);
 				conference_video_launch_muxing_thread(conference, canvas, 0);
 				switch_mutex_unlock(conference->canvas_mutex);
 			}
 
 			if (conference->canvas_count > 1) {
-				video_layout_t *svlayout = conference_video_get_layout(conference, NULL, CONFERENCE_MUX_DEFAULT_SUPER_LAYOUT);
-				mcu_canvas_t *canvas = NULL;
+					video_layout_t *svlayout = conference_video_get_layout(conference, NULL, CONFERENCE_MUX_DEFAULT_SUPER_LAYOUT);
+					mcu_canvas_t *canvas = NULL;
 
-				if (svlayout) {
-					switch_mutex_lock(conference->canvas_mutex);
-					conference_video_init_canvas(conference, svlayout, &canvas);
-					conference_video_set_canvas_bgcolor(canvas, conference->video_super_canvas_bgcolor);
-					conference_video_attach_canvas(conference, canvas, 1);
-					conference_video_launch_muxing_thread(conference, canvas, 1);
-					switch_mutex_unlock(conference->canvas_mutex);
-				}
+					if (svlayout) {
+							switch_mutex_lock(conference->canvas_mutex);
+							conference_video_init_canvas(conference, svlayout, &canvas);
+							conference_video_set_canvas_bgcolor(canvas, conference->video_super_canvas_bgcolor);
+							conference_video_attach_canvas(conference, canvas, 1);
+							conference_video_launch_muxing_thread(conference, canvas, 1);
+							switch_mutex_unlock(conference->canvas_mutex);
+					}
 			}
 
 			if (cfg.profile) {
@@ -3782,16 +3948,16 @@ conference_obj_t *conference_new(char *name, conference_xml_cfg_t cfg, switch_co
 
 					if (name && bw) {
 						const char *str = switch_core_sprintf(conference->pool, "%s%s%s%s%s", bw,
-															  !zstr(res) ? ":" : "", res, !zstr(fps) ? ":" : "", fps);
+																									!zstr(res) ? ":" : "", res, !zstr(fps) ? ":" : "", fps);
 
 						const char *gname = switch_core_sprintf(conference->pool, "group-%s", name);
-						
+
 						conference_set_variable(conference, gname, str);
 						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Video codec group preset %s set to [%s]\n", gname, str);
 					}
 
 				}
-			
+
 			}
 
 		}
