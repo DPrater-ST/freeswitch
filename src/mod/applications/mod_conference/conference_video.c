@@ -2261,6 +2261,7 @@ void *SWITCH_THREAD_FUNC conference_video_layer_thread_run(switch_thread_t *thre
 	while(conference_utils_member_test_flag(member, MFLAG_RUNNING) && member->layer_thread_running) {
 		mcu_layer_t *layer = NULL;
 		mcu_canvas_t *canvas = NULL;
+		int video_layer_id = -1;
 		
 
 		switch_thread_cond_wait(member->layer_cond, member->layer_cond_mutex);
@@ -2271,12 +2272,12 @@ void *SWITCH_THREAD_FUNC conference_video_layer_thread_run(switch_thread_t *thre
 
 
 		// Here we need to loop 
-
-		if (member->video_layer_id > -1 && member->canvas_id > -1) {
+		video_layer_id = member->video_layer_id;
+		if (video_layer_id > -1 && member->canvas_id > -1) {
 			for(i = 0; i < member->conference->canvas_count; i ++) {
 		                canvas = member->conference->canvases[i];
 				//canvas = member->conference->canvases[member->canvas_id];
-				layer = &canvas->layers[member->video_layer_id];
+				layer = &canvas->layers[video_layer_id];
 
 				if (layer) {
 					if (layer->need_patch) {
