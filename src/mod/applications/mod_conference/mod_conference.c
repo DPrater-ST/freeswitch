@@ -2509,11 +2509,27 @@ SWITCH_STANDARD_APP(conference_function)
 		}
 	}
 
+	for (int x = 0; x <= conference->canvas_count; x++) {
+		mcu_canvas_t * canvas = conference->canvases[x];
+		if(canvas == NULL) {
+			continue;
+		}
+
+		if(member.canvas_id == canvas->canvas_id) {
+			if(member.vid_no_access_other_canvas == 1) {
+				canvas->accept_other_canvas_images = SWITCH_FALSE;
+				break;
+			}
+		}
+        }
+
+
 	/* Add the caller to the conference */
 	if (conference_member_add(conference, &member) != SWITCH_STATUS_SUCCESS) {
 		switch_core_codec_destroy(&member.read_codec);
 		goto done;
 	}
+
 
 	if (conference->conference_video_mode == CONF_VIDEO_MODE_MUX) {
 		conference_video_launch_muxing_write_thread(&member);
@@ -2586,6 +2602,37 @@ SWITCH_STANDARD_APP(conference_function)
 
 	/* Remove the caller from the conference */
 	conference_member_del(member.conference, &member);
+
+	
+	for (int x = 0; x <= conference->canvas_count; x++) {
+		mcu_canvas_t * canvas = conference->canvases[x];
+		if(canvas == NULL) {
+			continue;
+		}
+
+		if(member.canvas_id == canvas->canvas_id) {
+
+			int found = 0;
+			conference_member_t *imember = NULL;
+			switch_mutex_lock(conference->member_mutex);
+        		for (imember = conference->members; imember; imember = imember->next) {
+				if(imember->canvas_id == canvas->canvas_id) {
+					found = 1;
+				}		
+                	}
+
+        		switch_mutex_unlock(conference->member_mutex);
+
+			if(found == 0) {
+				canvas->accept_other_canvas_images = SWITCH_TRUE;
+			}
+			break;
+
+        	}
+	}
+	
+	
+	
 
 	/* Put the original codec back */
 	switch_core_session_set_read_codec(member.session, NULL);

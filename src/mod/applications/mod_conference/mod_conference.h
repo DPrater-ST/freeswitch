@@ -1310,6 +1310,7 @@ const char *conference_get_variable(conference_obj_t *conference, const char *va
 
 // New functions
 int is_video_layout_exist(conference_obj_t *conference, char * video_layout_name);
+int get_conference_count(conference_obj_t *conference, mcu_canvas_t *canvas);
 
 /* Global Structs */
 

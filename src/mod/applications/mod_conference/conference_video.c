@@ -1058,8 +1058,6 @@ void conference_video_detach_video_layer(conference_member_t *member)
                 	continue;
         	}
 
-		
-
 //		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Before lock here member->canvas_id %d, member->id %d, canvas->canvas_id %d\n", member->canvas_id, member->id, canvas->canvas_id);
 
 
@@ -2728,7 +2726,7 @@ switch_status_t conference_video_find_layer(conference_obj_t *conference, mcu_ca
 		}
 	}
 
-	if ((canvas->layers_used < canvas->total_layers ||
+	if ((member->video_layer_id == -1 || canvas->layers_used < canvas->total_layers ||
 		 (avatar_layers && !member->avatar_png_img) || conference_utils_member_test_flag(member, MFLAG_MOD)) &&
 		(member->avatar_png_img || (switch_core_session_media_flow(member->session, SWITCH_MEDIA_TYPE_VIDEO) != SWITCH_MEDIA_FLOW_SENDONLY &&
 		  switch_core_session_media_flow(member->session, SWITCH_MEDIA_TYPE_VIDEO) != SWITCH_MEDIA_FLOW_INACTIVE))) {
@@ -2765,6 +2763,12 @@ switch_status_t conference_video_find_layer(conference_obj_t *conference, mcu_ca
 			for (i = 0; i < canvas->total_layers; i++) {
 				xlayer = &canvas->layers[i];
 				
+			
+				if(member->id == xlayer->member_id && member->video_layer_id == -1) {
+					// this code may create problem we need to test all cases make sure it never crash.
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Looks like on detaching we have layer id issue we are setting to zero layer id %d, xlayer->member_id %d, memeber->id %d, canvas->canvas_id %d,\n", i, xlayer->member_id, member->id, canvas->canvas_id);
+					xlayer->member_id = 0;
+				}
 
 				if ((!xlayer->member_id || (!member->avatar_png_img &&
 											xlayer->is_avatar && !xlayer->geometry.role_id &&
@@ -3190,6 +3194,48 @@ switch_status_t conference_video_change_res(conference_obj_t *conference, int w,
 	return SWITCH_STATUS_SUCCESS;
 }
 
+int get_conference_count(conference_obj_t *conference, mcu_canvas_t *canvas) {
+
+	int count = 0;
+	int canvas_video_count = 0;
+	conference_member_t *imember;
+	
+	// We should only consider video count as we will get recv only streams we shouldn't consider member count. we should consider video count
+
+	if(canvas->accept_other_canvas_images == SWITCH_FALSE) { // This canvas doesn't accept other canvas images
+		return canvas->video_count; 
+	}
+
+	// First check is there any users that are feeding to this canvas
+	switch_mutex_lock(conference->member_mutex);
+
+		for (imember = conference->members; imember; imember = imember->next) {
+			if(imember->canvas_id == canvas->canvas_id) {
+				canvas_video_count ++;			
+			}
+		}
+		
+	switch_mutex_unlock(conference->member_mutex);
+	
+	if(canvas_video_count == 0) {
+		return 0;
+	}
+	
+
+	for (int x = 0; x <= conference->canvas_count; x++) {
+		mcu_canvas_t * canvas = conference->canvases[x];
+		if(canvas == NULL) {
+			break;
+		}
+		if(canvas->accept_other_canvas_images == SWITCH_TRUE) { // If there is a canvas which is presenter
+			count += canvas->video_count;
+		}
+		
+	}
+
+	return count;
+}
+
 
 void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thread, void *obj)
 {
@@ -3234,6 +3280,7 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 		switch_frame_t file_frame = { 0 };
 		int j = 0, personal = conference_utils_test_flag(conference, CFLAG_PERSONAL_CANVAS) ? 1 : 0;
 		int video_count = 0;
+		int my_conference_count = 0;
 
 		if (!personal) {
 			if (canvas->new_vlayout && switch_mutex_trylock(conference->canvas_mutex) == SWITCH_STATUS_SUCCESS) {
@@ -3317,14 +3364,10 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 			count_changed = 1;
 		}
 
-		if(conference_count != conference->count && canvas->accept_other_canvas_images == SWITCH_TRUE) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Count Changes here ----- previous count %d new count %d\n", conference_count, conference->count);
-			conference_count = conference->count;
-			count_changed = 1;
-		}
-
 		canvas->video_count = last_video_count = video_count;
 		switch_mutex_unlock(conference->member_mutex);
+
+		my_conference_count = get_conference_count(conference, canvas);
 
 		if (canvas->playing_video_file) {
 			switch_core_timer_next(&canvas->timer);
@@ -3347,6 +3390,13 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 			do_refresh = 100;
 			count_changed = 1;
 		}
+
+		if(conference_count != my_conference_count) {
+                        conference_count = my_conference_count;
+                        count_changed = 1;
+                }
+
+
 
 		if (members_with_avatar != conference->members_with_avatar) {
 			count_changed = 1;
@@ -3381,7 +3431,7 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 
 			if (canvas->video_layout_group && (lg = switch_core_hash_find(conference->layout_group_hash, canvas->video_layout_group))) {
 				// If the canvas not accepting other images just pass only canvas video count or pass conference member count
-				if ((vlayout = conference_video_find_best_layout(conference, lg, canvas->accept_other_canvas_images == SWITCH_TRUE ? conference->count : canvas->video_count - file_count, file_count))) {
+				if ((vlayout = conference_video_find_best_layout(conference, lg, conference_count - file_count, file_count))) {
 					switch_mutex_lock(conference->member_mutex);
 
 					canvas->new_vlayout = vlayout;
@@ -3532,7 +3582,7 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 			}
 
 			// If the canvas don't receive other members video. Make sure we don't push
-			if(canvas->accept_other_canvas_images == SWITCH_FALSE) { 
+			if(canvas->accept_other_canvas_images == SWITCH_FALSE || imember->vid_no_access_other_canvas == 1) { 
 				if (imember->canvas_id > -1 && imember->canvas_id != canvas->canvas_id) {
 					switch_core_session_rwunlock(imember->session);
 					continue;
@@ -4361,8 +4411,6 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 			switch_mutex_unlock(conference->member_mutex);
 		} // NOT PERSONAL
 	}
-
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Ending here ============================>>>>>>> canvas->canvas_id %d\n", canvas->canvas_id);
 
 
 	switch_img_free(&file_img);
