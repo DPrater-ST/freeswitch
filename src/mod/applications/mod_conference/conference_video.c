@@ -3204,6 +3204,9 @@ int get_conference_count(conference_obj_t *conference, mcu_canvas_t *canvas) {
 	switch_mutex_lock(conference->member_mutex);
 
 		for (imember = conference->members; imember; imember = imember->next) {
+			if(imember->canvas_id == canvas->canvas_id) {
+				count ++;
+			}			
 			for(int x = 0; x < imember->other_canvas_ids_length; x++) {
 				// We may check wether we are pushing to this canvas id or not.  
 				if(imember->other_canvas_ids[x] == canvas->canvas_id) {
@@ -3349,6 +3352,7 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 
 		my_conference_count = get_conference_count(conference, canvas);
 
+
 		if (canvas->playing_video_file) {
 			switch_core_timer_next(&canvas->timer);
 		}
@@ -3372,11 +3376,13 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 		}
 
 		if(conference_count != my_conference_count) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "canvas_id %d, old conference_count %d, new conference_count %d\b", canvas->canvas_id, conference_count, my_conference_count);
                         conference_count = my_conference_count;
                         count_changed = 1;
                 }
-
-
+		else if(canvas->canvas_id == 1) {
+		//	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "not changing canvas_id %d, old conference_count %d, new conference_count %d\b", canvas->canvas_id, conference_count, my_conference_count);
+		}
 
 		if (members_with_avatar != conference->members_with_avatar) {
 			count_changed = 1;
@@ -3640,7 +3646,7 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 					for(i = 0; i < imember->conference->canvas_count; i ++) {
 						if(canvas->canvas_id != i) { // We already pushing it
 							mcu_canvas_t * other_canvas = conference->canvases[i];
-							if(other_canvas->video_count != 0) {
+//							if(other_canvas->video_count != 0) {
 								for(int x = 0; x < imember->other_canvas_ids_length; x ++) {
 									if(imember->other_canvas_ids[x] == other_canvas->canvas_id) {
 										// If there is no members on other layouts we shouldn't push anything there.
@@ -3653,7 +3659,7 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 										}
 									}
 								}
-							} 
+							//} 
 						}
 					}
 				}

@@ -1134,9 +1134,11 @@ switch_status_t conference_api_sub_canvas(conference_member_t *member, switch_st
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[conference_api_sub_canvas]  member id : %d, canvas_id : %d, other_canvas length %d\n", member->id, index, member->other_canvas_ids_length);
 
 	for(i = 1; i < num_canvas_ids; i++) {	
-		member->other_canvas_ids[i - 1] = atoi(canvas_id_list[i]);
+		member->other_canvas_ids[i - 1] = atoi(canvas_id_list[i]) - 1;
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[conference_api_sub_canvas]  member id : %d, canvas_id : %d, other_canvas_id %d\n", member->id, index, member->other_canvas_ids[i - 1]);
 	}
+
+	//conference_utils_set_flag(member->conference, CFLAG_REFRESH_LAYOUT);
 
 	//canvas = member->conference->canvases[member->canvas_id];
 	//conference_video_attach_video_layer(member, canvas, index);
