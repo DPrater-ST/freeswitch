@@ -572,7 +572,6 @@ typedef struct mcu_canvas_s {
 	codec_set_t *write_codecs[MAX_MUX_CODECS];
 	int write_codecs_count;
 	switch_bool_t disable_auto_clear;
-	switch_bool_t accept_other_canvas_images; // Wether this canvas accept other images for other canvas or not.
 } mcu_canvas_t;
 
 /* Record Node */
@@ -907,9 +906,8 @@ struct conference_member {
 	switch_core_video_filter_t video_filters;
 	int video_manual_border;
 	switch_queue_t *img_queue[MAX_LAYOUT_CANVASES];
-	int vid_no_access_other_canvas; 
-	int org_canvas_id;
-	int org_watching_canvas_id;
+	int other_canvas_ids_length;
+	int other_canvas_ids[MAX_LAYOUT_CANVASES];
 };
 
 typedef enum {

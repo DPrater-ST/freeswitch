@@ -1095,7 +1095,21 @@ switch_status_t conference_api_sub_canvas(conference_member_t *member, switch_st
 	int index;
 	char *val = (char *) data;
 	//mcu_canvas_t *canvas = NULL;
+	
+	int i = 0;
+   	char canvas_id_list[20][20];
+   	char* context = NULL;
+   	char* canvas_id = strtok_r(val, ",", &context);
+   	int num_canvas_ids = 0; // Index to canvas_id list. We will append to the list
 
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[conference_api_sub_canvas] member id : %d, canvases %s\n", member->id, val);
+
+	while (canvas_id != NULL){
+      		strcpy(canvas_id_list[num_canvas_ids], canvas_id); // Copy to canvas_id list
+      		num_canvas_ids++;
+     		canvas_id = strtok_r(NULL, ",", &context);
+	}
+	
 	if (member->conference->canvas_count == 1) {
 		stream->write_function(stream, "-ERR Only 1 Canvas\n");
 		return SWITCH_STATUS_SUCCESS;
@@ -1114,6 +1128,15 @@ switch_status_t conference_api_sub_canvas(conference_member_t *member, switch_st
 	conference_video_detach_video_layer(member);
 	member->canvas_id = index;
 	member->layer_timeout = DEFAULT_LAYER_TIMEOUT;
+
+	member->other_canvas_ids_length = num_canvas_ids -1;
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[conference_api_sub_canvas]  member id : %d, canvas_id : %d, other_canvas length %d\n", member->id, index, member->other_canvas_ids_length);
+
+	for(i = 1; i < num_canvas_ids; i++) {	
+		member->other_canvas_ids[i - 1] = atoi(canvas_id_list[i]);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[conference_api_sub_canvas]  member id : %d, canvas_id : %d, other_canvas_id %d\n", member->id, index, member->other_canvas_ids[i - 1]);
+	}
 
 	//canvas = member->conference->canvases[member->canvas_id];
 	//conference_video_attach_video_layer(member, canvas, index);

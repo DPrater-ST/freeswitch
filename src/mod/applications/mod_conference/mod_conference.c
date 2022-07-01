@@ -1921,9 +1921,6 @@ SWITCH_STANDARD_APP(conference_function)
 	int locked = 0;
 	int mpin_matched = 0;
 	uint32_t *mid;
-	const char *vid_canvas = NULL;
-	const char *vid_watching_canvas = NULL;
-	const char *vid_no_access_other_canvas = NULL;
 
 	if (!switch_channel_test_app_flag_key("conference_silent", channel, CONF_SILENT_DONE) &&
 		(switch_channel_test_flag(channel, CF_RECOVERED) || switch_true(switch_channel_get_variable(channel, "conference_silent_entry")))) {
@@ -2390,39 +2387,7 @@ SWITCH_STANDARD_APP(conference_function)
 	switch_xml_free(cxml);
 	cxml = NULL;
 
-	// Setting Canvases based on User
-	vid_canvas = switch_channel_get_variable(channel, "vid-canvas");
-	vid_watching_canvas = switch_channel_get_variable(channel, "vid-watching-canvas");
-	vid_no_access_other_canvas = switch_channel_get_variable(channel, "vid-no-access-other-canvas");
-
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "member id %d vid_canvas %s, vid_watching_canvas %s, vid_no_access_other_canvas %s, conference->canvas_count %d ------------\n", member.id, vid_canvas, vid_watching_canvas, vid_no_access_other_canvas, conference->canvas_count);
-
-	if(vid_canvas != NULL && vid_watching_canvas != NULL) {
-		int vid_canvas_id = atoi(vid_canvas);
-		int vid_watching_canvas_id = atoi(vid_watching_canvas);
-
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "vid_canvas %s, vid_watching_canvas %s\n", vid_canvas, vid_watching_canvas);
-
-		if(vid_canvas_id >= 0 &&  vid_watching_canvas_id >= 0) {
-			// Make sure this canvases doesn't cross the actuval canvas thread count
-			if(vid_canvas_id < conference->canvas_count &&  vid_watching_canvas_id < conference->canvas_count) {
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Setting the count vid_canvas_id %d, vid_watching_canvas_id %d\n", vid_canvas_id, vid_watching_canvas_id);
-				member.canvas_id = vid_canvas_id;
-				member.watching_canvas_id = vid_watching_canvas_id;
-				member.org_canvas_id = vid_canvas_id;
-				member.org_watching_canvas_id = vid_watching_canvas_id;
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Setting to member id %d vid_canvas %d, vid_watching_canvas %d\n", member.id, vid_canvas_id, vid_watching_canvas_id);
-			}
-		}
-
-	}
-
-	member.vid_no_access_other_canvas = 0; // Other canvas image data is processed in this canvas
-
-	if(vid_no_access_other_canvas && !strcmp(vid_no_access_other_canvas, "true")) {
-		// This flag indicates don't fetch other canvas data to this specific canvas
-		member.vid_no_access_other_canvas = 1;
-	}	 
+	member.other_canvas_ids_length = 0;
 
 	/* if we're using "bridge:" make an outbound call and bridge it in */
 	if (!zstr(bridgeto) && strcasecmp(bridgeto, "none")) {
@@ -2514,13 +2479,6 @@ SWITCH_STANDARD_APP(conference_function)
 		if(canvas == NULL) {
 			continue;
 		}
-
-		if(member.canvas_id == canvas->canvas_id) {
-			if(member.vid_no_access_other_canvas == 1) {
-				canvas->accept_other_canvas_images = SWITCH_FALSE;
-				break;
-			}
-		}
         }
 
 
@@ -2602,37 +2560,6 @@ SWITCH_STANDARD_APP(conference_function)
 
 	/* Remove the caller from the conference */
 	conference_member_del(member.conference, &member);
-
-	
-	for (int x = 0; x <= conference->canvas_count; x++) {
-		mcu_canvas_t * canvas = conference->canvases[x];
-		if(canvas == NULL) {
-			continue;
-		}
-
-		if(member.canvas_id == canvas->canvas_id) {
-
-			int found = 0;
-			conference_member_t *imember = NULL;
-			switch_mutex_lock(conference->member_mutex);
-        		for (imember = conference->members; imember; imember = imember->next) {
-				if(imember->canvas_id == canvas->canvas_id) {
-					found = 1;
-				}		
-                	}
-
-        		switch_mutex_unlock(conference->member_mutex);
-
-			if(found == 0) {
-				canvas->accept_other_canvas_images = SWITCH_TRUE;
-			}
-			break;
-
-        	}
-	}
-	
-	
-	
 
 	/* Put the original codec back */
 	switch_core_session_set_read_codec(member.session, NULL);
@@ -3976,7 +3903,6 @@ conference_obj_t *conference_new(char *name, conference_xml_cfg_t cfg, switch_co
 					canvas->video_layout_group = switch_core_strdup(conference->pool, conference->video_layout_group);
 				}
 
-				canvas->accept_other_canvas_images = SWITCH_TRUE; // Only if we set it from the canvas
 				conference_video_attach_canvas(conference, canvas, 0);
 				conference_video_launch_muxing_thread(conference, canvas, 0);
 				switch_mutex_unlock(conference->canvas_mutex);

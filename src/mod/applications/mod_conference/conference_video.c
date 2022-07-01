@@ -3198,42 +3198,21 @@ switch_status_t conference_video_change_res(conference_obj_t *conference, int w,
 int get_conference_count(conference_obj_t *conference, mcu_canvas_t *canvas) {
 
 	int count = 0;
-	int canvas_video_count = 0;
 	conference_member_t *imember;
 	
-	// We should only consider video count as we will get recv only streams we shouldn't consider member count. we should consider video count
-
-	if(canvas->accept_other_canvas_images == SWITCH_FALSE) { // This canvas doesn't accept other canvas images
-		return canvas->video_count; 
-	}
-
 	// First check is there any users that are feeding to this canvas
 	switch_mutex_lock(conference->member_mutex);
 
 		for (imember = conference->members; imember; imember = imember->next) {
-			if(imember->canvas_id == canvas->canvas_id) {
-				canvas_video_count ++;			
+			for(int x = 0; x < imember->other_canvas_ids_length; x++) {
+				// We may check wether we are pushing to this canvas id or not.  
+				if(imember->other_canvas_ids[x] == canvas->canvas_id) {
+					count ++;
+				}
 			}
 		}
 		
 	switch_mutex_unlock(conference->member_mutex);
-	
-	if(canvas_video_count == 0) {
-		return 0;
-	}
-	
-
-	for (int x = 0; x <= conference->canvas_count; x++) {
-		mcu_canvas_t * canvas = conference->canvases[x];
-		if(canvas == NULL) {
-			break;
-		}
-		if(canvas->accept_other_canvas_images == SWITCH_TRUE) { // If there is a canvas which is presenter
-			count += canvas->video_count;
-		}
-		
-	}
-
 	return count;
 }
 
@@ -3583,12 +3562,32 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 			}
 
 			// If the canvas don't receive other members video. Make sure we don't push
+			if(imember->canvas_id > -1) {
+				int found = 0;
+				// Find out wether the member has other canvas id or not
+				for(int x = 0; x < imember->other_canvas_ids_length; x ++) {
+					if (imember->other_canvas_ids[x] == canvas->canvas_id) { 
+						found = 1;
+						break;
+					}			
+				}
+
+				if(found == 0) {
+					if (imember->canvas_id != canvas->canvas_id) {
+						switch_core_session_rwunlock(imember->session);
+						continue;
+					}
+				}
+			}
+
+			/*
 			if(canvas->accept_other_canvas_images == SWITCH_FALSE || imember->vid_no_access_other_canvas == 1) { 
 				if (imember->canvas_id > -1 && imember->canvas_id != canvas->canvas_id) {
 					switch_core_session_rwunlock(imember->session);
 					continue;
 				}
 			}
+			*/
 
 			if ((conference_utils_member_test_flag(imember, MFLAG_HOLD) ||
 				(conference_utils_test_flag(imember->conference, CFLAG_VIDEO_MUTE_EXIT_CANVAS) &&
@@ -3636,18 +3635,23 @@ void *SWITCH_THREAD_FUNC conference_video_muxing_thread_run(switch_thread_t *thr
 				conference_video_pop_next_image(imember, &img);
 				if(img != NULL) {
 					int i = 0;
+					// Now check Do we need to push the images to any one 
 					//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Got image directly from canvas->canvas_id %d, member->id %d, imember->canvas_id %d\n", canvas->canvas_id, imember->id, imember->canvas_id);
 					for(i = 0; i < imember->conference->canvas_count; i ++) {
-						if(canvas->canvas_id != i) {
+						if(canvas->canvas_id != i) { // We already pushing it
 							mcu_canvas_t * other_canvas = conference->canvases[i];
-							if(other_canvas->video_count != 0 && canvas->accept_other_canvas_images == SWITCH_TRUE) {
-								// If there is no members on other layouts we shouldn't push anything there.
-								switch_image_t * img_copy = NULL;
-								switch_img_copy(img, &img_copy);
-				//				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Pushing the image to loop %d canvas->canvas_id %d, member->id %d\n", i, canvas->canvas_id, imember->id);
-			
-								if (switch_queue_trypush(imember->img_queue[i], img_copy) != SWITCH_STATUS_SUCCESS) {
-									switch_img_free(&img_copy);
+							if(other_canvas->video_count != 0) {
+								for(int x = 0; x < imember->other_canvas_ids_length; x ++) {
+									if(imember->other_canvas_ids[x] == other_canvas->canvas_id) {
+										// If there is no members on other layouts we shouldn't push anything there.
+										switch_image_t * img_copy = NULL;
+										switch_img_copy(img, &img_copy);
+										//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Pushing the image to loop %d canvas->canvas_id %d, member->id %d\n", i, canvas->canvas_id, imember->id);
+										// Make sure remove the images if count is greater than what we created
+										if (switch_queue_trypush(imember->img_queue[i], img_copy) != SWITCH_STATUS_SUCCESS) {
+											switch_img_free(&img_copy);
+										}
+									}
 								}
 							} 
 						}
