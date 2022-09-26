@@ -1452,7 +1452,10 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 
 					sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
 					if(is_register == 0) {
-						usleep( 50000 ); 
+						if(alt_event_type && !strcmp(alt_event_type, "dialog")) {
+							//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Usleep Here ?????? alt_event_type %s\n", alt_event_type);
+							usleep( 50000 ); 
+						}
 					}
 
 
