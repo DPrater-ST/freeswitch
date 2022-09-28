@@ -1122,6 +1122,7 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 	char *presence_source = switch_event_get_header(event, "presence-source");
 	char *call_info_state = switch_event_get_header(event, "presence-call-info-state");
 	const char *uuid = switch_event_get_header(event, "unique-id");
+	char * calling_file = switch_event_get_header(event, "Event-Calling-File");
 	switch_console_callback_match_t *matches = NULL;
 	struct presence_helper helper = { 0 };
 	int hup = 0;
@@ -1134,6 +1135,10 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 
 	if(presence_source && !strcmp(presence_source, "register")) {
 		is_register = 1;	
+	}
+
+	if(calling_file && !strcmp(calling_file, "sofia_reg.c")) {
+		is_register = 1;
 	}
 
 	if (zstr(proto) || !strcasecmp(proto, "any")) {
@@ -1452,7 +1457,10 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 
 					sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
 					if(is_register == 0) {
-						usleep( 50000 ); 
+						if(alt_event_type && !strcmp(alt_event_type, "dialog")) {
+							//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Usleep Here ?????? alt_event_type %s, calling_file %s\n", alt_event_type, calling_file);
+							usleep( 50000 ); 
+						}
 					}
 
 
@@ -1958,6 +1966,7 @@ void sofia_presence_event_handler(switch_event_t *event)
 {
 	switch_event_t *cloned_event;
 	char *presence_source = NULL;
+	char *calling_file = NULL;
 
 	if (!EVENT_THREAD_STARTED) {
 		sofia_presence_event_thread_start();
@@ -1994,7 +2003,9 @@ void sofia_presence_event_handler(switch_event_t *event)
 	}	
 
 	presence_source = switch_event_get_header(cloned_event, "presence-source");
-	if(presence_source && !strcmp(presence_source, "register")) {
+	calling_file = switch_event_get_header(cloned_event, "Event-Calling-File");
+	
+	if((presence_source && !strcmp(presence_source, "register")) || (calling_file && !strcmp(calling_file, "sofia_reg.c"))) {
 
 		if (switch_queue_trypush(mod_sofia_globals.reg_blf_notify_queue, cloned_event) != SWITCH_STATUS_SUCCESS) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "BLF_NOTIFY queue overloaded.... Flushing queue\n");
