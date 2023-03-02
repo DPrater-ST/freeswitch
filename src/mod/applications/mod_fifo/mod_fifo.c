@@ -937,7 +937,8 @@ static switch_status_t fifo_execute_sql_queued(char **sqlp, switch_bool_t sql_al
 
 	return SWITCH_STATUS_SUCCESS;
 }
-#if 0
+
+// If the tables are not created we should fifo_execute_sql to create table dynamically not with queue thread
 static switch_status_t fifo_execute_sql(char *sql, switch_mutex_t *mutex)
 {
 	switch_cache_db_handle_t *dbh = NULL;
@@ -966,7 +967,6 @@ static switch_status_t fifo_execute_sql(char *sql, switch_mutex_t *mutex)
 
 	return status;
 }
-#endif
 
 static switch_bool_t fifo_execute_sql_callback(switch_mutex_t *mutex, char *sql, switch_core_db_callback_func_t callback, void *pdata)
 {
@@ -4306,7 +4306,7 @@ SWITCH_STANDARD_API(fifo_api_function)
 }
 
 const char outbound_sql[] =
-	"create table fifo_outbound (\n"
+	"create table if not exists fifo_outbound (\n"
 	" uuid varchar(255),\n"
 	" fifo_name varchar(255),\n"
 	" originate_string varchar(255),\n"
@@ -4336,7 +4336,7 @@ const char outbound_sql[] =
 	");\n";
 
 const char bridge_sql[] =
-	"create table fifo_bridge (\n"
+	"create table if not exists fifo_bridge (\n"
 	" fifo_name varchar(1024) not null,\n"
 	" caller_uuid varchar(255) not null,\n"
 	" caller_caller_id_name varchar(255),\n"
@@ -4349,7 +4349,7 @@ const char bridge_sql[] =
 ;
 
 const char callers_sql[] =
-	"create table fifo_callers (\n"
+	"create table if not exists fifo_callers (\n"
 	" fifo_name varchar(255) not null,\n"
 	" uuid varchar(255) not null,\n"
 	" caller_caller_id_name varchar(255),\n"
@@ -4469,6 +4469,27 @@ static switch_status_t load_config(int reload, int del_all)
 	}
 
 	switch_cache_db_release_db_handle(&dbh);
+
+	// Making sure creating tables if not exist 
+	if(!reload) {
+		char query[2048];
+		memset(query, 0x0, sizeof(query));
+		strncpy(query, (char *)outbound_sql, sizeof(query) - 1);	
+		sql = query;
+		fifo_execute_sql(sql, globals.sql_mutex); 
+
+		memset(query, 0x0, sizeof(query));
+		strncpy(query, (char *)bridge_sql, sizeof(query) - 1);	
+		sql = query;
+		fifo_execute_sql(sql, globals.sql_mutex); 
+
+		sql = (char *)callers_sql;
+		memset(query, 0x0, sizeof(query));
+		strncpy(query, (char *)callers_sql, sizeof(query) - 1);	
+		sql = query;
+		fifo_execute_sql(sql, globals.sql_mutex); 
+	}
+
 
 	if (!reload) {
 		char *sql= "update fifo_outbound set start_time=0,stop_time=0,ring_count=0,use_count=0,outbound_call_count=0,outbound_fail_count=0 where static=0";
