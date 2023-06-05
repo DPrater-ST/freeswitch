@@ -6451,6 +6451,7 @@ static void sofia_handle_sip_r_options(switch_core_session_t *session, int statu
 	}
 }
 
+
 static void sofia_handle_sip_r_invite(switch_core_session_t *session, int status,
 									  char const *phrase,
 									  nua_t *nua, sofia_profile_t *profile, nua_handle_t *nh, sofia_private_t *sofia_private, sip_t const *sip,
@@ -7044,7 +7045,7 @@ static void sofia_handle_sip_r_invite(switch_core_session_t *session, int status
 										 switch_core_session_get_uuid(session),
 										 to_user, to_host, to_tag, from_user, from_host, from_tag, contact_user,
 										 contact_host, astate, "outbound", user_agent,
-										 profile->name, mod_sofia_globals.hostname, switch_str_nil(full_contact),
+										 profile->name, switch_core_get_localip(), switch_str_nil(full_contact),
 										 switch_str_nil(presence_id), switch_str_nil(presence_data), switch_str_nil(p), (long) now);
 					switch_assert(sql);
 
@@ -11498,7 +11499,7 @@ void sofia_handle_sip_i_invite(switch_core_session_t *session, nua_t *nua, sofia
 							 tech_pvt->sofia_private->uuid,
 							 to_user, to_host, to_tag, dialog_from_user, dialog_from_host, from_tag,
 							 contact_user, contact_host, "confirmed", "inbound", user_agent,
-							 profile->name, mod_sofia_globals.hostname, switch_str_nil(full_contact),
+							 profile->name, switch_core_get_localip(), switch_str_nil(full_contact),
 							 switch_str_nil(presence_id), switch_str_nil(presence_data), switch_str_nil(p), now);
 
 		switch_assert(sql);

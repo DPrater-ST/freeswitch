@@ -2419,6 +2419,50 @@ static char *parse_presence_data_cols(switch_event_t *event)
 #define new_sql()   switch_assert(sql_idx+1 < MAX_SQL); if (exists) sql[sql_idx++]
 #define new_sql_a() switch_assert(sql_idx+1 < MAX_SQL); sql[sql_idx++]
 
+SWITCH_DECLARE(char *) switch_core_get_localip(void)
+{
+	FILE *fp;
+	static char *localip = NULL;
+	int length = 1024;
+	char *pos;
+
+
+	if(localip == NULL) {
+			localip = (char *)malloc(length);
+	}
+	else {
+		if(strlen(localip) != 0) {
+			return localip;
+		}
+	}
+
+
+	fp = popen("hostname -I", "r");
+	if (fp == NULL) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Not able to fetch the local ip serious issue command didn't work try run [hostname -I] command in the console\n");
+			localip = (char *)switch_core_get_hostname(); 
+			return (char *)switch_core_get_hostname();
+	}
+
+	while (fgets(localip, length - 1, fp) != NULL) {
+		if ((pos=strchr(localip, '\n')) != NULL) {
+			*pos = '\0';
+		}
+
+		if ((pos=strchr(localip, ' ')) != NULL) {
+			*pos = '\0';
+		}
+
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "switch_core_get_localip %s\n", localip);
+
+	    return localip;
+	}
+
+
+	return (char *)switch_core_get_hostname();
+}
+
+
 static void core_event_handler(switch_event_t *event)
 {
 	char *sql[MAX_SQL] = { 0 };
@@ -2533,7 +2577,7 @@ static void core_event_handler(switch_event_t *event)
 								   switch_event_get_header_nil(event, "channel-state"),
 								   switch_event_get_header_nil(event, "channel-call-state"),
 								   switch_event_get_header_nil(event, "caller-dialplan"),
-								   switch_event_get_header_nil(event, "caller-context"), switch_core_get_switchname(),
+								   switch_event_get_header_nil(event, "caller-context"), switch_core_get_localip(),
 								   switch_event_get_header_nil(event, "caller-caller-id-name"),
 								   switch_event_get_header_nil(event, "caller-caller-id-number"),
 								   switch_event_get_header_nil(event, "caller-network-addr"),
@@ -2763,7 +2807,7 @@ static void core_event_handler(switch_event_t *event)
 									   (long) switch_epoch_time_now(NULL),
 									   a_uuid,
 									   b_uuid,
-									   switch_core_get_switchname()
+									   switch_core_get_localip()
 									   );
 		}
 		break;
