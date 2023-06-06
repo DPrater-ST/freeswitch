@@ -881,21 +881,21 @@ static void do_dialog_probe(switch_event_t *event)
 							 "sip_dialogs.contact, sip_dialogs.contact_user, sip_dialogs.contact_host, "
 							 "sip_dialogs.sip_to_tag, sip_dialogs.sip_from_tag, sip_subscriptions.orig_proto "
 							 "from sip_dialogs "
-							 "left join sip_subscriptions on sip_subscriptions.hostname=sip_dialogs.hostname and "
+							 "left join sip_subscriptions on "
 							 "sip_subscriptions.profile_name=sip_dialogs.profile_name and "
 							 "sip_subscriptions.call_id='%q' "
-							 "left join sip_registrations on sip_registrations.hostname=sip_dialogs.hostname and "
+							 "left join sip_registrations on "
 							 "sip_registrations.profile_name=sip_dialogs.profile_name and "
 							 "(sip_dialogs.sip_from_user = sip_registrations.sip_user and sip_dialogs.sip_from_host = '%q' and "
 							 "(sip_dialogs.sip_from_host = sip_registrations.orig_server_host or "
 							 "sip_dialogs.sip_from_host = sip_registrations.sip_host) ) "
-							 "where sip_dialogs.hostname='%q' and sip_dialogs.profile_name='%q' and "
+							 "where sip_dialogs.profile_name='%q' and "
 							 "sip_dialogs.call_info_state != 'seized' and sip_dialogs.presence_id='%q@%q' or (sip_registrations.sip_user='%q' and "
 							 "(sip_registrations.orig_server_host='%q' or sip_registrations.sub_host='%q' "
 							 "or sip_registrations.presence_hosts like '%%%q%%'))",
 							 probe_euser, probe_host,
 							 sub_call_id, probe_host,
-							 mod_sofia_globals.hostname, profile->name,
+							 profile->name,
 							 probe_euser, probe_host,
 							 probe_euser, probe_host, probe_host, probe_host);
 		switch_assert(sql);
@@ -1300,6 +1300,8 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 	case SWITCH_EVENT_PRESENCE_PROBE:
 		{
 			char *probe_type = switch_event_get_header(event, "probe-type");
+
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "SWITCH_EVENT_PRESENCE_PROBE probe_type %s\n", probe_type);
 
 			if (!probe_type || strcasecmp(probe_type, "dialog")) {
 				/* NORMAL PROBE */
@@ -2288,6 +2290,10 @@ static int sofia_dialog_probe_callback(void *pArg, int argc, char **argv, char *
 		for (i = 0; i < argc; i++) {
 			switch_log_printf(SWITCH_CHANNEL_LOG,SWITCH_LOG_WARNING,  "sofia_dialog_probe_callback: %d [%s]=[%s]\n", i, columnNames[i], argv[i]);
 		}
+	}
+
+	if(zstr(contact_user)) {
+			contact_user = "freeswitch";
 	}
 
 	if (zstr(to_user) || zstr(contact_user)) {
@@ -4635,6 +4641,8 @@ void sofia_presence_handle_sip_i_subscribe(int status,
 
  end:
 
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Came event %s\n", event);
+
 	if (strcasecmp(event, "call-info") && strcasecmp(event, "line-seize")) {
 
 		if (to_user && (strstr(to_user, "ext+") || strstr(to_user, "user+"))) {
@@ -4680,7 +4688,10 @@ void sofia_presence_handle_sip_i_subscribe(int status,
 			}
 		} else {
 
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Came event 1111 %s\n", event);
+
 			if (!strcasecmp(event, "dialog")) {
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Dialog section Came event 1111 %s\n", event);
 				if (switch_event_create(&sevent, SWITCH_EVENT_PRESENCE_PROBE) == SWITCH_STATUS_SUCCESS) {
 					switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "probe-type", "dialog");
 					switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "proto", SOFIA_CHAT_PROTO);
