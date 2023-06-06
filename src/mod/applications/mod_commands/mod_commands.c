@@ -5793,9 +5793,9 @@ SWITCH_STANDARD_API(show_function)
 		}
 
 		if (!strcasecmp(command, "calls")) {
-			switch_snprintfv(sql, sizeof(sql), "select * from basic_calls where hostname='%q' order by call_created_epoch", switch_core_get_switchname());
+			switch_snprintfv(sql, sizeof(sql), "select * from basic_calls where hostname='%q' order by call_created_epoch", switch_core_get_localip());
 			if (argv[1] && !strcasecmp(argv[1], "count")) {
-				switch_snprintfv(sql, sizeof(sql), "select count(*) from basic_calls where hostname='%q'", switch_core_get_switchname());
+				switch_snprintfv(sql, sizeof(sql), "select count(*) from basic_calls where hostname='%q'", switch_core_get_localip());
 				holder.justcount = 1;
 				if (argv[2] && argv[3] && !strcasecmp(argv[2], "as")) {
 					as = argv[3];
@@ -5821,39 +5821,39 @@ SWITCH_STANDARD_API(show_function)
 				if (strchr(argv[2], '%')) {
 					switch_snprintfv(sql, sizeof(sql),
 						"select * from channels where hostname='%q' and uuid like '%q' or name like '%q' or cid_name like '%q' or cid_num like '%q' or presence_data like '%q' or accountcode like '%q' order by created_epoch",
-						switch_core_get_switchname(), argv[2], argv[2], argv[2], argv[2], argv[2], argv[2]);
+						switch_core_get_localip(), argv[2], argv[2], argv[2], argv[2], argv[2], argv[2]);
 				} else {
 					switch_snprintfv(sql, sizeof(sql),
 						"select * from channels where hostname='%q' and uuid like '%%%q%%' or name like '%%%q%%' or cid_name like '%%%q%%' or cid_num like '%%%q%%' or presence_data like '%%%q%%' or accountcode like '%%%q%%' order by created_epoch",
-						switch_core_get_switchname(), argv[2], argv[2], argv[2], argv[2], argv[2], argv[2]);
+						switch_core_get_localip(), argv[2], argv[2], argv[2], argv[2], argv[2], argv[2]);
 				}
 				if (argv[4] && !strcasecmp(argv[3], "as")) {
 					as = argv[4];
 				}
 			} else {
-				switch_snprintfv(sql, sizeof(sql), "select * from channels where hostname='%q' order by created_epoch", switch_core_get_switchname());
+				switch_snprintfv(sql, sizeof(sql), "select * from channels where hostname='%q' order by created_epoch", switch_core_get_localip());
 			}
 		} else if (!strcasecmp(command, "channels")) {
-			switch_snprintfv(sql, sizeof(sql), "select * from channels where hostname='%q' order by created_epoch", switch_core_get_switchname());
+			switch_snprintfv(sql, sizeof(sql), "select * from channels where hostname='%q' order by created_epoch", switch_core_get_localip());
 			if (argv[1] && !strcasecmp(argv[1], "count")) {
-				switch_snprintfv(sql, sizeof(sql), "select count(*) from channels where hostname='%q'", switch_core_get_switchname());
+				switch_snprintfv(sql, sizeof(sql), "select count(*) from channels where hostname='%q'", switch_core_get_localip());
 				holder.justcount = 1;
 				if (argv[2] && argv[3] && !strcasecmp(argv[2], "as")) {
 					as = argv[3];
 				}
 			}
 		} else if (!strcasecmp(command, "detailed_calls")) {
-			switch_snprintfv(sql, sizeof(sql), "select * from detailed_calls where hostname='%q' order by created_epoch", switch_core_get_switchname());
+			switch_snprintfv(sql, sizeof(sql), "select * from detailed_calls where hostname='%q' order by created_epoch", switch_core_get_localip());
 			if (argv[2] && !strcasecmp(argv[1], "as")) {
 				as = argv[2];
 			}
 		} else if (!strcasecmp(command, "bridged_calls")) {
-			switch_snprintfv(sql, sizeof(sql), "select * from basic_calls where b_uuid is not null and hostname='%q' order by created_epoch", switch_core_get_switchname());
+			switch_snprintfv(sql, sizeof(sql), "select * from basic_calls where b_uuid is not null and hostname='%q' order by created_epoch", switch_core_get_localip());
 			if (argv[2] && !strcasecmp(argv[1], "as")) {
 				as = argv[2];
 			}
 		} else if (!strcasecmp(command, "detailed_bridged_calls")) {
-			switch_snprintfv(sql, sizeof(sql), "select * from detailed_calls where b_uuid is not null and hostname='%q' order by created_epoch", switch_core_get_switchname());
+			switch_snprintfv(sql, sizeof(sql), "select * from detailed_calls where b_uuid is not null and hostname='%q' order by created_epoch", switch_core_get_localip());
 			if (argv[2] && !strcasecmp(argv[1], "as")) {
 				as = argv[2];
 			}

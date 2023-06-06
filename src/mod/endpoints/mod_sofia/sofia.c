@@ -3201,7 +3201,7 @@ int sofia_sip_stuck_removal_dialog_callback(void *pArg, int argc, char **argv, c
 {
 	int status;
 	sofia_profile_t *profile =  (sofia_profile_t *)pArg;
-	if (argc != 1) {
+	if (argc != 2) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "expected 1 arguments from query, instead got %d\n", argc);
 		return 0;
 	}
@@ -3210,6 +3210,13 @@ int sofia_sip_stuck_removal_dialog_callback(void *pArg, int argc, char **argv, c
 	if(status == 0 && profile != NULL && profile->qm != NULL) {
 		char *sql = switch_mprintf("delete from sip_dialogs where call_id='%q'", argv[0]);
 		sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
+
+		sql = switch_mprintf("delete from channels where uuid='%q'", argv[1]);
+		sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
+
+		sql = switch_mprintf("delete from calls where caller_uuid='%q' or callee_uuid='%q'", argv[1], argv[1]);
+		sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
+
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Stuck call Callid %s removed\n", argv[0]);
 	}
 
@@ -3228,7 +3235,7 @@ void *SWITCH_THREAD_FUNC sofia_stuck_removal_thread_run(switch_thread_t *thread,
 
 		 for(;;) {
 
-			sql = switch_mprintf("select call_id from sip_dialogs where hostname = '%q'", switch_core_get_localip());  
+			sql = switch_mprintf("select call_id, uuid from sip_dialogs where hostname = '%q'", switch_core_get_localip());  
 			sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_sip_stuck_removal_dialog_callback, profile);
 			switch_safe_free(sql);
 
