@@ -56,6 +56,9 @@ extern su_log_t stun_log[];
 #endif
 extern su_log_t su_log_default[];
 
+static int is_stuck_thread_created = 0;
+static int stuck_remove_interval = 60;
+
 static void config_sofia_profile_urls(sofia_profile_t * profile);
 static void parse_gateways(sofia_profile_t *profile, switch_xml_t gateways_tag, const char *gwname);
 static void parse_domain_tag(sofia_profile_t *profile, switch_xml_t x_domain_tag, const char *dname, const char *parse, const char *alias);
@@ -3159,6 +3162,90 @@ switch_thread_t *launch_sofia_worker_thread(sofia_profile_t *profile)
 	return thread;
 }
 
+
+static int check_sip_call_exist_or_not(char *call_id)
+{
+
+	nua_handle_t *nh = NULL;
+    switch_hash_index_t *hi;
+    const void *var;
+    void *val;
+    sofia_profile_t *profile;
+	int found = 0;
+
+    switch_mutex_lock(mod_sofia_globals.hash_mutex);
+
+	found = 0;
+    if (mod_sofia_globals.profile_hash) {
+        for (hi = switch_core_hash_first(mod_sofia_globals.profile_hash); hi; hi = switch_core_hash_next(&hi)) {
+            switch_core_hash_this(hi, &var, NULL, &val);
+            if ((profile = (sofia_profile_t *) val)) {
+                nh = nua_handle_by_call_id(profile->nua, call_id);
+                if (nh) {
+					found = 1;
+                    break;
+				}
+            }
+        }
+        switch_safe_free(hi);
+    }
+
+    switch_mutex_unlock(mod_sofia_globals.hash_mutex);
+
+	return found;
+
+}
+
+int sofia_sip_stuck_removal_dialog_callback(void *pArg, int argc, char **argv, char **columnNames)
+{
+	int status;
+	sofia_profile_t *profile =  (sofia_profile_t *)pArg;
+	if (argc != 2) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "expected 1 arguments from query, instead got %d\n", argc);
+		return 0;
+	}
+
+	status = check_sip_call_exist_or_not(argv[0]);
+	if(status == 0 && profile != NULL && profile->qm != NULL) {
+		char *sql = switch_mprintf("delete from sip_dialogs where call_id='%q'", argv[0]);
+		sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
+
+		sql = switch_mprintf("delete from channels where uuid='%q'", argv[1]);
+		sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
+
+		sql = switch_mprintf("delete from calls where caller_uuid='%q' or callee_uuid='%q'", argv[1], argv[1]);
+		sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
+
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Stuck call Callid %s removed\n", argv[0]);
+	}
+
+	return 0;
+}
+
+
+// This thread is used for removing the stuck sip_dialogs
+void *SWITCH_THREAD_FUNC sofia_stuck_removal_thread_run(switch_thread_t *thread, void *obj) 
+{
+
+		char *sql;
+		sofia_profile_t *profile = (sofia_profile_t *) obj;
+
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "sofia_stuck_removal_thread_run Thread started ----------\n");
+
+		 for(;;) {
+
+			sql = switch_mprintf("select call_id, uuid from sip_dialogs where local_hostname = '%q'", switch_core_get_localip());  
+			sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_sip_stuck_removal_dialog_callback, profile);
+			switch_safe_free(sql);
+
+			sleep(stuck_remove_interval); // Default 5 mins
+
+		 }
+	
+}
+
+
+
 void *SWITCH_THREAD_FUNC sofia_profile_thread_run(switch_thread_t *thread, void *obj)
 {
 	sofia_profile_t *profile = (sofia_profile_t *) obj;
@@ -3572,6 +3659,18 @@ void sofia_profile_destroy(sofia_profile_t *profile)
 	}
 }
 
+void launch_sofia_stuck_removal_thread(sofia_profile_t *profile)
+{
+	//switch_thread_t *thread;
+	switch_threadattr_t *thd_attr = NULL;
+
+	switch_threadattr_create(&thd_attr, profile->pool);
+	switch_threadattr_detach_set(thd_attr, 1);
+	switch_threadattr_stacksize_set(thd_attr, SWITCH_THREAD_STACKSIZE);
+	switch_threadattr_priority_set(thd_attr, SWITCH_PRI_REALTIME);
+	switch_thread_create(&profile->thread, thd_attr, sofia_stuck_removal_thread_run, profile, profile->pool);
+}
+
 void launch_sofia_profile_thread(sofia_profile_t *profile)
 {
 	//switch_thread_t *thread;
@@ -3582,6 +3681,12 @@ void launch_sofia_profile_thread(sofia_profile_t *profile)
 	switch_threadattr_stacksize_set(thd_attr, SWITCH_THREAD_STACKSIZE);
 	switch_threadattr_priority_set(thd_attr, SWITCH_PRI_REALTIME);
 	switch_thread_create(&profile->thread, thd_attr, sofia_profile_thread_run, profile, profile->pool);
+
+	if(is_stuck_thread_created == 0) {
+			is_stuck_thread_created = 1;
+			launch_sofia_stuck_removal_thread(profile);
+	}
+
 }
 
 static void logger(void *logarg, char const *fmt, va_list ap)
@@ -4490,7 +4595,13 @@ switch_status_t config_sofia(sofia_config_t reload, char *profile_name)
 				}
 			} else if (!strcasecmp(var, "capture-server")) {
 				mod_sofia_globals.capture_server = switch_core_strdup(mod_sofia_globals.pool, val);
+			} else if (!strcasecmp(var, "stuck-remove-interval")) {
+					stuck_remove_interval = atoi(val);
+					if(stuck_remove_interval <= 0) {
+							stuck_remove_interval = 5 * 60; // 5 Mins
+					}
 			}
+
 		}
 	}
 
