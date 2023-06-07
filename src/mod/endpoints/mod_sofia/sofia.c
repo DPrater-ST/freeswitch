@@ -7038,14 +7038,14 @@ static void sofia_handle_sip_r_invite(switch_core_session_t *session, int status
 					sql = switch_mprintf("insert into sip_dialogs "
 										 "(call_id,uuid,sip_to_user,sip_to_host,sip_to_tag,sip_from_user,sip_from_host,sip_from_tag,contact_user,"
 										 "contact_host,state,direction,user_agent,profile_name,hostname,contact,presence_id,presence_data,"
-										 "call_info,rcd,call_info_state) "
-										 "values('%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q',%ld,'')",
+										 "call_info,rcd,call_info_state, local_hostname) "
+										 "values('%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q',%ld,'', '%q')",
 										 call_id,
 										 switch_core_session_get_uuid(session),
 										 to_user, to_host, to_tag, from_user, from_host, from_tag, contact_user,
 										 contact_host, astate, "outbound", user_agent,
 										 profile->name, mod_sofia_globals.hostname, switch_str_nil(full_contact),
-										 switch_str_nil(presence_id), switch_str_nil(presence_data), switch_str_nil(p), (long) now);
+										 switch_str_nil(presence_id), switch_str_nil(presence_data), switch_str_nil(p), (long) now, switch_core_get_localip());
 					switch_assert(sql);
 
 					sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
@@ -11492,14 +11492,14 @@ void sofia_handle_sip_i_invite(switch_core_session_t *session, nua_t *nua, sofia
 		sql = switch_mprintf("insert into sip_dialogs "
 							 "(call_id,uuid,sip_to_user,sip_to_host,sip_to_tag,sip_from_user,sip_from_host,sip_from_tag,contact_user,"
 							 "contact_host,state,direction,user_agent,profile_name,hostname,contact,presence_id,presence_data,"
-							 "call_info,rcd,call_info_state) "
-							 "values('%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q',%ld,'')",
+							 "call_info,rcd,call_info_state, local_hostname) "
+							 "values('%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q',%ld,'', '%q')",
 							 call_id,
 							 tech_pvt->sofia_private->uuid,
 							 to_user, to_host, to_tag, dialog_from_user, dialog_from_host, from_tag,
 							 contact_user, contact_host, "confirmed", "inbound", user_agent,
 							 profile->name, mod_sofia_globals.hostname, switch_str_nil(full_contact),
-							 switch_str_nil(presence_id), switch_str_nil(presence_data), switch_str_nil(p), now);
+							 switch_str_nil(presence_id), switch_str_nil(presence_data), switch_str_nil(p), now, switch_core_get_localip());
 
 		switch_assert(sql);
 

@@ -2419,6 +2419,51 @@ static char *parse_presence_data_cols(switch_event_t *event)
 #define new_sql()   switch_assert(sql_idx+1 < MAX_SQL); if (exists) sql[sql_idx++]
 #define new_sql_a() switch_assert(sql_idx+1 < MAX_SQL); sql[sql_idx++]
 
+SWITCH_DECLARE(char *) switch_core_get_localip(void)
+{
+	FILE *fp;
+	static char *localip = NULL;
+	int length = 1024;
+	char *pos;
+
+
+	if(localip == NULL) {
+			localip = (char *)malloc(length);
+	}
+	else {
+		if(strlen(localip) != 0) {
+			return localip;
+		}
+	}
+
+
+	fp = popen("hostname -I", "r");
+	if (fp == NULL) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Not able to fetch the local ip serious issue command didn't work try run [hostname -I] command in the console\n");
+			localip = (char *)switch_core_get_hostname(); 
+			return (char *)switch_core_get_hostname();
+	}
+
+	while (fgets(localip, length - 1, fp) != NULL) {
+		if ((pos=strchr(localip, '\n')) != NULL) {
+			*pos = '\0';
+		}
+
+		if ((pos=strchr(localip, ' ')) != NULL) {
+			*pos = '\0';
+		}
+
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "switch_core_get_localip %s\n", localip);
+
+	    return localip;
+	}
+
+
+	return (char *)switch_core_get_hostname();
+}
+
+
+
 static void core_event_handler(switch_event_t *event)
 {
 	char *sql[MAX_SQL] = { 0 };
@@ -2523,8 +2568,8 @@ static void core_event_handler(switch_event_t *event)
 			break;
 		}
 	case SWITCH_EVENT_CHANNEL_CREATE:
-		new_sql() = switch_mprintf("insert into channels (uuid,direction,created,created_epoch, name,state,callstate,dialplan,context,hostname,initial_cid_name,initial_cid_num,initial_ip_addr,initial_dest,initial_dialplan,initial_context) "
-								   "values('%q','%q','%q','%ld','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q')",
+		new_sql() = switch_mprintf("insert into channels (uuid,direction,created,created_epoch, name,state,callstate,dialplan,context,hostname,initial_cid_name,initial_cid_num,initial_ip_addr,initial_dest,initial_dialplan,initial_context, local_hostname) "
+								   "values('%q','%q','%q','%ld','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q', '%q')",
 								   switch_event_get_header_nil(event, "unique-id"),
 								   switch_event_get_header_nil(event, "call-direction"),
 								   switch_event_get_header_nil(event, "event-date-local"),
@@ -2539,7 +2584,8 @@ static void core_event_handler(switch_event_t *event)
 								   switch_event_get_header_nil(event, "caller-network-addr"),
 								   switch_event_get_header_nil(event, "caller-destination-number"),
 								   switch_event_get_header_nil(event, "caller-dialplan"),
-								   switch_event_get_header_nil(event, "caller-context")
+								   switch_event_get_header_nil(event, "caller-context"),
+								   switch_core_get_localip()
 								   );
 		break;
 	case SWITCH_EVENT_CHANNEL_ANSWER:
@@ -2756,14 +2802,15 @@ static void core_event_handler(switch_event_t *event)
 
 
 			new_sql() = switch_mprintf("insert into calls (call_uuid,call_created,call_created_epoch,"
-									   "caller_uuid,callee_uuid,hostname) "
-									   "values ('%q','%q','%ld','%q','%q','%q')",
+									   "caller_uuid,callee_uuid,hostname, local_hostname) "
+									   "values ('%q','%q','%ld','%q','%q','%q', '%q')",
 									   switch_event_get_header_nil(event, "channel-call-uuid"),
 									   switch_event_get_header_nil(event, "event-date-local"),
 									   (long) switch_epoch_time_now(NULL),
 									   a_uuid,
 									   b_uuid,
-									   switch_core_get_switchname()
+									   switch_core_get_switchname(),
+									   switch_core_get_localip()
 									   );
 		}
 		break;
@@ -2922,7 +2969,7 @@ static char create_channels_sql[] =
 	"   write_rate  VARCHAR(32),\n"
 	"   write_bit_rate  VARCHAR(32),\n"
 	"   secure VARCHAR(64),\n"
-	"   hostname VARCHAR(256),\n"
+	"   local_hostname VARCHAR(256),\n"
 	"   presence_id VARCHAR(4096),\n"
 	"   presence_data VARCHAR(4096),\n"
 	"   accountcode VARCHAR(256),\n"
@@ -2938,7 +2985,8 @@ static char create_channels_sql[] =
 	"   initial_ip_addr  VARCHAR(256),\n"
 	"   initial_dest  VARCHAR(1024),\n"
 	"   initial_dialplan  VARCHAR(128),\n"
-	"   initial_context  VARCHAR(128)\n"
+	"   initial_context  VARCHAR(128),\n"
+	"   local_hostname VARCHAR(256)\n"
 	");\n";
 
 static char create_row_size_limited_channels_sql[] =
@@ -2980,7 +3028,8 @@ static char create_row_size_limited_channels_sql[] =
 	"   initial_ip_addr  VARCHAR(256),\n"
 	"   initial_dest  VARCHAR(1024),\n"
 	"   initial_dialplan  VARCHAR(128),\n"
-	"   initial_context  VARCHAR(128)\n"
+	"   initial_context  VARCHAR(128),\n"
+	"   local_hostname VARCHAR(256)\n"
 ");\n";
 
 static char create_calls_sql[] =
@@ -2990,6 +3039,7 @@ static char create_calls_sql[] =
 	"   call_created_epoch  INTEGER,\n"
 	"   caller_uuid      VARCHAR(256),\n"
 	"   callee_uuid      VARCHAR(256),\n"
+	"   hostname VARCHAR(256),\n"
 	"   hostname VARCHAR(256)\n"
 	");\n";
 
