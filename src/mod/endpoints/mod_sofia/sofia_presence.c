@@ -2290,6 +2290,10 @@ static int sofia_dialog_probe_callback(void *pArg, int argc, char **argv, char *
 		}
 	}
 
+	if(zstr(contact_user)) {
+		contact_user = from_user; // When doing fresh notify when call exist on other instant the contact user is coming empty as SBC sending no contact user in the contact header we are using from header for contact user
+	}
+
 	if (zstr(to_user) || zstr(contact_user)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "sofia_dialog_probe_callback: not enough info to generate a dialog entry\n");
 		return 0;

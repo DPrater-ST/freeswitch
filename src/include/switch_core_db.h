@@ -560,6 +560,8 @@ SWITCH_DECLARE(int) switch_core_db_load_extension(switch_core_db_t *db, const ch
 
 SWITCH_DECLARE(char*)switch_sql_concat(void);
 
+SWITCH_DECLARE(char *) switch_core_get_localip(void);
+
 SWITCH_END_EXTERN_C
 #endif
 /* For Emacs:
