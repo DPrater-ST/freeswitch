@@ -57,7 +57,16 @@ extern su_log_t stun_log[];
 extern su_log_t su_log_default[];
 
 static int is_stuck_thread_created = 0;
-static int stuck_remove_interval = 60;
+static int stuck_remove_interval = 30;
+
+struct add_db_details {
+	char uid_one[128];
+	char type[32];
+	char uid_two[128];
+	struct add_db_details *next;
+};
+
+struct add_db_details * db_details_head = NULL;
 
 static void config_sofia_profile_urls(sofia_profile_t * profile);
 static void parse_gateways(sofia_profile_t *profile, switch_xml_t gateways_tag, const char *gwname);
@@ -3223,6 +3232,54 @@ int sofia_sip_stuck_removal_dialog_callback(void *pArg, int argc, char **argv, c
 }
 
 
+
+int sofia_sip_stuck_add_dialog_callback(void *pArg, int argc, char **argv, char **columnNames)
+{
+	sofia_profile_t *profile =  (sofia_profile_t *)pArg;
+	if (argc != 3) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "expected 1 arguments from query, instead got %d\n", argc);
+		return 0;
+	}
+
+	if(profile == NULL || profile->qm == NULL) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Profile pool is not available will retry in next time\n");
+			return 0;
+	}
+	else {
+
+		char *uid_one = argv[0]; // this uuid for sip_dialogs, calls and channels
+		char *type = argv[1]; // it is a type -> sip_dialogs : sip, calls: calls, channels : channels
+		char *uid_two = argv[2]; // for sip_dialogs it is call_id and channels it will be empty and calls it is peer channel uid
+		struct add_db_details * current = NULL;
+
+		struct add_db_details * details = (struct add_db_details*)malloc(sizeof(struct add_db_details));
+		memset(details, 0x0, sizeof(struct add_db_details));
+
+		strncpy(details->uid_one, uid_one, sizeof(details->uid_one) - 1);
+		strncpy(details->type , type, sizeof(details->type) - 1);
+		strncpy(details->uid_two, uid_two, sizeof(details->uid_two) - 1);
+		details->next = NULL;
+
+		//Insert at the end
+		
+		if(db_details_head == NULL) {
+			db_details_head = details;
+			return 0;
+		}
+
+		current = db_details_head;
+		while (current->next != NULL) {
+			current = current->next;
+		}
+
+		current->next = details;
+
+	}
+	
+	return 0;
+}
+
+
 // This thread is used for removing the stuck sip_dialogs
 void *SWITCH_THREAD_FUNC sofia_stuck_removal_thread_run(switch_thread_t *thread, void *obj) 
 {
@@ -3234,9 +3291,125 @@ void *SWITCH_THREAD_FUNC sofia_stuck_removal_thread_run(switch_thread_t *thread,
 
 		 for(;;) {
 
+			int i = 0;
+			struct add_db_details * current = NULL;
+			struct add_db_details * temp = NULL;
+			switch_core_session_t *session = NULL;
+
+			db_details_head = NULL; // Making sure the details are empty
+
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "sofia_stuck_removal_thread_run Thread Executing\n");
+
 			sql = switch_mprintf("select call_id, uuid from sip_dialogs where local_hostname = '%q'", switch_core_get_localip());  
 			sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_sip_stuck_removal_dialog_callback, profile);
 			switch_safe_free(sql);
+
+
+			sql = switch_mprintf("select uuid as uid, 'sip' as type, call_id as uid1 from sip_dialogs WHERE local_hostname = '%q' UNION select uuid as uid, 'channels' as type, '' as uid1 from channels WHERE local_hostname = '%q'  UNION select call_uuid as uid , 'calls' as type, callee_uuid as uid1 from calls WHERE local_hostname = '%q'", switch_core_get_localip(), switch_core_get_localip(), switch_core_get_localip());  
+			sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_sip_stuck_add_dialog_callback, profile);
+			switch_safe_free(sql);
+
+
+			// I am just breaking the loop ifit exceeds to reduce the cpu issue.It will not happen just prevent case
+			while( i ++ < 65535) {
+
+				switch_channel_t *channel = NULL;
+				private_object_t *tech_pvt = NULL;
+
+				session = switch_core_session_fetch_running(session);
+				if(session == NULL) {
+					break;
+				}
+
+				channel = switch_core_session_get_channel(session);
+				tech_pvt = switch_core_session_get_private(session);
+
+				//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "sofia_stuck_removal_thread_run session %p, loop %d, channel %p, tech_pvt %p\n", (void *)session, i, (void *)channel, (void *)tech_pvt);		
+
+				if(channel != NULL && tech_pvt != NULL) {
+
+					int in_sip_exist = 0;
+					int in_calls_exist = 0;
+					int in_channels_exist = 0;
+
+					// This must traverse in for loop
+					const char *uid = switch_core_session_get_uuid(session);
+					current = db_details_head;
+					while (current != NULL) {
+
+						if(!strcmp(current->type, "sip")) {
+							if(!strcmp(uid, current->uid_one)) {
+								in_sip_exist = 1;
+							}
+						} else if(!strcmp(current->type, "calls")) {
+							if(!strcmp(uid, current->uid_one)) {
+								in_calls_exist = 1;
+							}
+						} else if(!strcmp(current->type, "channels")) {
+							if(!strcmp(uid, current->uid_one)) {
+								in_channels_exist = 1;
+							}
+						}
+
+						if(in_sip_exist == 1 && in_calls_exist == 1 && in_channels_exist == 1) {
+							break;
+						}
+
+						current = current->next;
+					}
+
+//					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Not found session %p, session id %s in_sip_exist %d, in_calls_exist %d, in_channels_exist %d, is_bridged_call %d, state %d, CS_INIT %d\n", (void *)session, uid, in_sip_exist, in_calls_exist, in_channels_exist, switch_channel_test_flag(channel, CF_BRIDGE_ORIGINATOR), switch_channel_get_running_state(channel), CS_INIT);
+
+
+					if(in_channels_exist == 0) {
+
+						// Check wether the state is 
+						switch_event_t *event;
+
+						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Not found in channels adding session %p, session id %s \n",  (void *)session, uid);
+						if (switch_event_create(&event, SWITCH_EVENT_CHANNEL_CREATE) == SWITCH_STATUS_SUCCESS) {
+							switch_channel_event_set_data(channel, event);
+							switch_event_fire(&event);
+						}
+
+					}
+
+
+					if(in_calls_exist == 0) {
+
+						// Not exist in calls. Lets check wether this user is caller or not if yes then fetch the peer channel uid
+
+						if (switch_channel_test_flag(channel, CF_BRIDGE_ORIGINATOR)) {
+							switch_event_t *event;
+							const char * peer_uid = switch_channel_get_variable(channel, SWITCH_SIGNAL_BRIDGE_VARIABLE);
+							const char *uid1 = switch_channel_get_variable(channel, SWITCH_BRIDGE_UUID_VARIABLE);
+							const char *uid2 = switch_channel_get_variable(channel, SWITCH_SIGNAL_BOND_VARIABLE);
+
+							switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Not found calls adding session %p, session id %s peer_uid %s, uid1 %s, uid2 %s\n",  (void *)session, uid, peer_uid, uid1, uid2);
+							
+							if (switch_event_create(&event, SWITCH_EVENT_CHANNEL_BRIDGE) == SWITCH_STATUS_SUCCESS) {
+								switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Bridge-A-Unique-ID", switch_core_session_get_uuid(session));
+								switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Bridge-B-Unique-ID", uid1);
+								switch_channel_event_set_data(channel, event);
+								switch_event_fire(&event);
+							}
+
+						}
+
+					}
+
+
+				}
+	
+			}
+
+			// Removing the result
+			current = db_details_head;
+			while (current != NULL) {
+				temp = current;
+				current = current->next;
+				free(temp);
+			}
 
 			sleep(stuck_remove_interval); // Default 5 mins
 

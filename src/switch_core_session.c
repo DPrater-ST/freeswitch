@@ -36,6 +36,8 @@
 #include "switch.h"
 #include "switch_core.h"
 #include "private/switch_core_pvt.h"
+#include "private/switch_hashtable_private.h"
+
 
 #define DEBUG_THREAD_POOL
 
@@ -116,6 +118,30 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_set_codec_slin(switch_core_s
 
 	return SWITCH_STATUS_FALSE;
 }
+
+/*****************************************************************************/
+SWITCH_DECLARE(switch_core_session_t *) switch_core_session_fetch_running_perform(void * last_one, const char *file, const char *func, int line)
+{
+	int i = 0;
+	struct entry *e;
+	switch_hashtable_t *h = session_manager.session_table;
+
+	for(i = 0; i < h->tablelength; i ++) {
+		e = h->table[i];
+		//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "i %d, e %p, last_one %p\n", i, (void *)e, last_one);
+		while (NULL != e) {
+			if(last_one == NULL) {
+					return e->v;
+			} else if(last_one == e->v) {
+					last_one = NULL;
+			}
+			e = e->next;
+		}
+	}
+
+	return NULL;
+}
+
 
 
 SWITCH_DECLARE(switch_core_session_t *) switch_core_session_perform_locate(const char *uuid_str, const char *file, const char *func, int line)

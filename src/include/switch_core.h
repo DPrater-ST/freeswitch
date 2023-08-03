@@ -916,6 +916,10 @@ SWITCH_DECLARE(char *) switch_core_get_uuid(void);
 SWITCH_DECLARE(switch_core_session_t *) switch_core_session_perform_locate(const char *uuid_str, const char *file, const char *func, int line);
 SWITCH_DECLARE(switch_core_session_t *) switch_core_session_perform_force_locate(const char *uuid_str, const char *file, const char *func, int line);
 
+SWITCH_DECLARE(switch_core_session_t *) switch_core_session_fetch_running_perform(void * session, const char *file, const char *func, int line);
+
+#define switch_core_session_fetch_running(session) switch_core_session_fetch_running_perform(session, __FILE__, __SWITCH_FUNC__, __LINE__)
+
 
 /*!
   \brief Locate a session based on it's uuid
