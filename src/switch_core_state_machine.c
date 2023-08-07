@@ -627,6 +627,7 @@ SWITCH_DECLARE(void) switch_core_session_run(switch_core_session_t *session)
 
 					STATE_MACRO(init, "INIT");
 
+					switch_channel_set_variable_printf(session->channel, "CHANNEL_CREATE_TIME", "%ld", (long) switch_epoch_time_now(NULL));
 					if (switch_event_create(&event, SWITCH_EVENT_CHANNEL_CREATE) == SWITCH_STATUS_SUCCESS) {
 						switch_channel_event_set_data(session->channel, event);
 						switch_event_fire(&event);

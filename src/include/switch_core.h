@@ -2844,6 +2844,8 @@ SWITCH_DECLARE(switch_status_t) switch_core_session_start_text_thread(switch_cor
 
 SWITCH_DECLARE(const char *) switch_core_get_event_channel_key_separator(void);
 
+SWITCH_DECLARE(switch_status_t)switch_core_session_update_codec_events_on_retry(switch_core_session_t *session);
+
 SWITCH_END_EXTERN_C
 #endif
 /* For Emacs:

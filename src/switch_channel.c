@@ -2700,12 +2700,14 @@ SWITCH_DECLARE(void) switch_channel_event_set_extended_data(switch_channel_t *ch
 		switch_channel_test_flag(channel, CF_VERBOSE_EVENTS) ||
 		switch_event_get_header(event, "presence-data-cols") ||
 		event->event_id == SWITCH_EVENT_CHANNEL_CREATE ||
+		event->event_id == SWITCH_EVENT_CHANNEL_CREATE_ON_RETRY||
 		event->event_id == SWITCH_EVENT_CHANNEL_ORIGINATE ||
 		event->event_id == SWITCH_EVENT_CHANNEL_UUID ||
 		event->event_id == SWITCH_EVENT_CHANNEL_ANSWER ||
 		event->event_id == SWITCH_EVENT_CHANNEL_PARK ||
 		event->event_id == SWITCH_EVENT_CHANNEL_UNPARK ||
 		event->event_id == SWITCH_EVENT_CHANNEL_BRIDGE ||
+		event->event_id == SWITCH_EVENT_CHANNEL_BRIDGE_ON_RETRY ||
 		event->event_id == SWITCH_EVENT_CHANNEL_UNBRIDGE ||
 		event->event_id == SWITCH_EVENT_CHANNEL_PROGRESS ||
 		event->event_id == SWITCH_EVENT_CHANNEL_PROGRESS_MEDIA ||
