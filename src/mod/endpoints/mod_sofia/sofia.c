@@ -3260,6 +3260,36 @@ int sofia_sip_stuck_add_dialog_callback(void *pArg, int argc, char **argv, char 
 		strncpy(details->uid_two, uid_two, sizeof(details->uid_two) - 1);
 		details->next = NULL;
 
+		if(!strcmp(type, "sip")) {
+			int status = check_sip_call_exist_or_not(argv[0]);
+			if(status == 0) {
+				char *sql = switch_mprintf("delete from sip_dialogs where call_id='%q'", argv[2]);
+				sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
+			}
+			else {
+				switch_core_session_t * session = switch_core_session_locate(uid_one);
+				if(session == NULL) {
+					char *sql = switch_mprintf("delete from sip_dialogs where call_id='%q'", argv[2]);
+					sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
+				}
+			}
+		}
+		else if(!strcmp(type, "calls")) {
+			switch_core_session_t * session = switch_core_session_locate(uid_one);
+			if(session == NULL) {
+				char *sql = switch_mprintf("delete from calls where caller_uuid='%q' and callee_uuid='%q'", uid_one, uid_two);
+				sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
+			}
+		}
+		else if(!strcmp(type, "channels")) {
+			switch_core_session_t * session = switch_core_session_locate(uid_one);
+			if(session == NULL) {
+				char *sql = switch_mprintf("delete from channels where uuid='%q'", uid_one);
+				sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
+			}
+		}
+
+
 		//Insert at the end
 		
 		if(db_details_head == NULL) {
@@ -3273,6 +3303,7 @@ int sofia_sip_stuck_add_dialog_callback(void *pArg, int argc, char **argv, char 
 		}
 
 		current->next = details;
+
 
 	}
 	
@@ -3300,9 +3331,9 @@ void *SWITCH_THREAD_FUNC sofia_stuck_removal_thread_run(switch_thread_t *thread,
 
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "sofia_stuck_removal_thread_run Thread Executing\n");
 
-			sql = switch_mprintf("select call_id, uuid from sip_dialogs where local_hostname = '%q'", switch_core_get_localip());  
-			sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_sip_stuck_removal_dialog_callback, profile);
-			switch_safe_free(sql);
+//			sql = switch_mprintf("select call_id, uuid from sip_dialogs where local_hostname = '%q'", switch_core_get_localip());  
+//			sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_sip_stuck_removal_dialog_callback, profile);
+//			switch_safe_free(sql);
 
 
 			sql = switch_mprintf("select uuid as uid, 'sip' as type, call_id as uid1 from sip_dialogs WHERE local_hostname = '%q' UNION select uuid as uid, 'channels' as type, '' as uid1 from channels WHERE local_hostname = '%q'  UNION select call_uuid as uid , 'calls' as type, callee_uuid as uid1 from calls WHERE local_hostname = '%q'", switch_core_get_localip(), switch_core_get_localip(), switch_core_get_localip());  
