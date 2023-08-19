@@ -3426,7 +3426,12 @@ void *SWITCH_THREAD_FUNC sofia_stuck_removal_thread_run(switch_thread_t *thread,
 						//switch_event_t *event_one;
 						const char *time = switch_channel_get_variable(channel, "CHANNEL_CREATE_TIME");
 
+
 						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Not found in channels adding session %p, session id %s, time %s \n",  (void *)session, uid, time);
+
+						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "application %s, application_data %s, callee_direction %s, call_uuid %s, sent_callee_name %s, sent_callee_num %s\n", switch_channel_get_variable(channel, "my-application"), switch_channel_get_variable(channel, "my-application-data"), switch_channel_get_variable(channel, "my-direction"), switch_channel_get_variable(channel, "my-call_uuid"), switch_channel_get_variable(channel, "my-sent-callee-id-name"), switch_channel_get_variable(channel, "my-sent-callee-id-number"));
+
+
 						if (switch_event_create(&event, SWITCH_EVENT_CHANNEL_CREATE_ON_RETRY) == SWITCH_STATUS_SUCCESS) {
 							switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "CHANNEL_CREATE_TIME", time);
 							switch_channel_event_set_data(channel, event);
