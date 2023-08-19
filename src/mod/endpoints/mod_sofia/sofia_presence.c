@@ -1378,18 +1378,28 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 					proto = SOFIA_CHAT_PROTO;
 				}
 
-				if (zstr(uuid)) {
 
-					sql = switch_mprintf("select state,status,rpid,presence_id,uuid from sip_dialogs "
-										 "where call_info_state != 'seized' and hostname='%q' and profile_name='%q' and "
-										 "((sip_from_user='%q' and sip_from_host='%q') or presence_id='%q@%q') order by rcd desc",
-										 mod_sofia_globals.hostname, profile->name, euser, host, euser, host);
+				if(!strcmp(proto, "park")) {
+
+						sql = switch_mprintf("select state,status,rpid,presence_id,uuid from sip_dialogs where uuid in (select uuid from channels where hostname='%q' and application = 'valet_park' and application_data ='%q@%q %q') and profile_name='%q'", mod_sofia_globals.hostname, euser, host, euser, profile->name);
+
+
 				} else {
-					sql = switch_mprintf("select state,status,rpid,presence_id,uuid from sip_dialogs "
-										 "where uuid != '%q' and call_info_state != 'seized' and hostname='%q' and profile_name='%q' and "
-										 "((sip_from_user='%q' and sip_from_host='%q') or presence_id='%q@%q') order by rcd desc",
-										 uuid, mod_sofia_globals.hostname, profile->name, euser, host, euser, host);
+
+					if (zstr(uuid)) {
+
+						sql = switch_mprintf("select state,status,rpid,presence_id,uuid from sip_dialogs "
+											 "where call_info_state != 'seized' and hostname='%q' and profile_name='%q' and "
+											 "((sip_from_user='%q' and sip_from_host='%q') or presence_id='%q@%q') order by rcd desc",
+											 mod_sofia_globals.hostname, profile->name, euser, host, euser, host);
+					} else {
+						sql = switch_mprintf("select state,status,rpid,presence_id,uuid from sip_dialogs "
+											 "where uuid != '%q' and call_info_state != 'seized' and hostname='%q' and profile_name='%q' and "
+											 "((sip_from_user='%q' and sip_from_host='%q') or presence_id='%q@%q') order by rcd desc",
+											 uuid, mod_sofia_globals.hostname, profile->name, euser, host, euser, host);
+					}
 				}
+
 
 				sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_presence_dialog_callback, &dh);
 
