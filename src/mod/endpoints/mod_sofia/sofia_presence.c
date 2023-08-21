@@ -1381,7 +1381,7 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 
 				if(!strcmp(proto, "park")) {
 
-						sql = switch_mprintf("select state,status,rpid,presence_id,uuid from sip_dialogs where uuid in (select uuid from channels where hostname='%q' and application = 'valet_park' and application_data ='%q@%q %q') and profile_name='%q'", mod_sofia_globals.hostname, euser, host, euser, profile->name);
+						sql = switch_mprintf("select state,status,rpid,presence_id,uuid, as park  from sip_dialogs where uuid in (select uuid from channels where hostname='%q' and application = 'valet_park' and application_data ='%q@%q %q') and profile_name='%q'", mod_sofia_globals.hostname, euser, host, euser, profile->name);
 
 
 				} else {
