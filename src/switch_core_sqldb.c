@@ -2701,6 +2701,9 @@ static void core_event_handler(switch_event_t *event)
 								   switch_event_get_header_nil(event, "unique-id")
 								   );
 
+//		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Updating here unique-id %s, call_uuid %s\n", switch_event_get_header_nil(event, "unique-id"), switch_event_get_header_nil(event, "my-call_uuid"));
+
+//		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "my appliocation data %s %s\n", switch_event_get_header_nil(event, "my-application"), switch_event_get_header_nil(event, "my-application-data"));
 
 
 
@@ -2982,11 +2985,10 @@ static void core_event_handler(switch_event_t *event)
 
 	case SWITCH_EVENT_CHANNEL_BRIDGE_ON_RETRY:
 		{
-			const char *a_uuid, *b_uuid, *uuid;
+			const char *a_uuid, *b_uuid;
 
 			a_uuid = switch_event_get_header(event, "Bridge-A-Unique-ID");
 			b_uuid = switch_event_get_header(event, "Bridge-B-Unique-ID");
-			uuid = switch_event_get_header(event, "unique-id");
 			time = switch_event_get_header(event, "CHANNEL_BRIDGE_TIME");
 
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Came here insertting on retry time %s\n", time);
@@ -2995,14 +2997,6 @@ static void core_event_handler(switch_event_t *event)
 				a_uuid = switch_event_get_header_nil(event, "caller-unique-id");
 				b_uuid = switch_event_get_header_nil(event, "other-leg-unique-id");
 			}
-
-			if (uuid && (extra_cols = parse_presence_data_cols(event))) {
-				new_sql() = switch_mprintf("update channels set %s where uuid='%q'", extra_cols, uuid);
-				switch_safe_free(extra_cols);
-			}
-
-			new_sql() = switch_mprintf("update channels set call_uuid='%q' where uuid='%q' or uuid='%q'",
-									   switch_event_get_header_nil(event, "my-call_uuid"), a_uuid, b_uuid);
 
 
 			if(time == NULL) {
@@ -3042,6 +3036,16 @@ static void core_event_handler(switch_event_t *event)
 			a_uuid = switch_event_get_header(event, "Bridge-A-Unique-ID");
 			b_uuid = switch_event_get_header(event, "Bridge-B-Unique-ID");
 			uuid = switch_event_get_header(event, "unique-id");
+			if(uuid != NULL) {
+				switch_core_session_t * session = switch_core_session_locate(uuid);
+				if(session != NULL) {
+						switch_channel_t *channel = switch_core_session_get_channel(session);
+						if(channel != NULL) {
+							switch_channel_set_variable(channel, "my-call_uuid", switch_event_get_header_nil(event, "channel-call-uuid"));
+						}
+				}
+
+			}
 
 			if (zstr(a_uuid) || zstr(b_uuid)) {
 				a_uuid = switch_event_get_header_nil(event, "caller-unique-id");
