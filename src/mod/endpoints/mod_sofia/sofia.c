@@ -3331,14 +3331,14 @@ void *SWITCH_THREAD_FUNC sofia_stuck_removal_thread_run(switch_thread_t *thread,
 
 		 for(;;) {
 
-			//int i = 0;
+			int i = 0;
 			struct add_db_details * current = NULL;
 			struct add_db_details * temp = NULL;
 			switch_core_session_t *session = NULL;
 
 			db_details_head = NULL; // Making sure the details are empty
 
-			//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "sofia_stuck_removal_thread_run Thread Executing\n");
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "sofia_stuck_removal_thread_run Thread Executing\n");
 
 //			sql = switch_mprintf("select call_id, uuid from sip_dialogs where local_hostname = '%q'", switch_core_get_localip());  
 //			sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_sip_stuck_removal_dialog_callback, profile);
@@ -3351,8 +3351,7 @@ void *SWITCH_THREAD_FUNC sofia_stuck_removal_thread_run(switch_thread_t *thread,
 
 
 			// I am just breaking the loop ifit exceeds to reduce the cpu issue.It will not happen just prevent case
-//			while( i ++ < 65535) {
-			while(0) {
+			while( i ++ < 65535) {
 
 				switch_channel_t *channel = NULL;
 				private_object_t *tech_pvt = NULL;
