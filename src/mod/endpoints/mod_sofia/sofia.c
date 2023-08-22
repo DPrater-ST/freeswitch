@@ -3272,6 +3272,9 @@ int sofia_sip_stuck_add_dialog_callback(void *pArg, int argc, char **argv, char 
 					char *sql = switch_mprintf("delete from sip_dialogs where call_id='%q'", argv[2]);
 					sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
 				}
+				else {
+					switch_core_session_rwunlock(session);
+				}
 			}
 		}
 		else if(!strcmp(type, "calls")) {
@@ -3280,12 +3283,18 @@ int sofia_sip_stuck_add_dialog_callback(void *pArg, int argc, char **argv, char 
 				char *sql = switch_mprintf("delete from calls where caller_uuid='%q' and callee_uuid='%q'", uid_one, uid_two);
 				sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
 			}
+			else {
+				switch_core_session_rwunlock(session);
+			}
 		}
 		else if(!strcmp(type, "channels")) {
 			switch_core_session_t * session = switch_core_session_locate(uid_one);
 			if(session == NULL) {
 				char *sql = switch_mprintf("delete from channels where uuid='%q'", uid_one);
 				sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
+			}
+			else {
+				switch_core_session_rwunlock(session);
 			}
 		}
 
@@ -3322,7 +3331,7 @@ void *SWITCH_THREAD_FUNC sofia_stuck_removal_thread_run(switch_thread_t *thread,
 
 		 for(;;) {
 
-			int i = 0;
+			//int i = 0;
 			struct add_db_details * current = NULL;
 			struct add_db_details * temp = NULL;
 			switch_core_session_t *session = NULL;
@@ -3342,7 +3351,8 @@ void *SWITCH_THREAD_FUNC sofia_stuck_removal_thread_run(switch_thread_t *thread,
 
 
 			// I am just breaking the loop ifit exceeds to reduce the cpu issue.It will not happen just prevent case
-			while( i ++ < 65535) {
+//			while( i ++ < 65535) {
+			while(0) {
 
 				switch_channel_t *channel = NULL;
 				private_object_t *tech_pvt = NULL;

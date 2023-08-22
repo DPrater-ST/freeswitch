@@ -2569,6 +2569,7 @@ static void core_event_handler(switch_event_t *event)
 						if(channel != NULL) {
 							switch_channel_set_variable(channel, "my-call_uuid", switch_event_get_header_nil(event, "unique-id"));
 						}
+						switch_core_session_rwunlock(session);
 				}
 
 			}
@@ -2757,6 +2758,7 @@ static void core_event_handler(switch_event_t *event)
 							switch_channel_set_variable(channel, "my-application", switch_event_get_header_nil(event, "application"));
 							switch_channel_set_variable(channel, "my-application-data", switch_event_get_header_nil(event, "application-data"));
 						}
+						switch_core_session_rwunlock(session);
 				}
 
 		}
@@ -2789,6 +2791,7 @@ static void core_event_handler(switch_event_t *event)
 						if(channel != NULL) {
 							switch_channel_set_variable(channel, "my-call_uuid", switch_event_get_header_nil(event, "channel-call-uuid"));
 						}
+						switch_core_session_rwunlock(session);
 				}
 
 			}
@@ -2829,6 +2832,7 @@ static void core_event_handler(switch_event_t *event)
 							switch_channel_set_variable(channel, "my-sent-callee-id-name", switch_event_get_header_nil(event, "sent-callee-id-name"));
 							switch_channel_set_variable(channel, "my-sent-callee-id-number", switch_event_get_header_nil(event, "sent-callee-id-number"));
 						}
+						switch_core_session_rwunlock(session);
 				}
 
 			}
@@ -2922,6 +2926,7 @@ static void core_event_handler(switch_event_t *event)
 								switch_channel_set_variable(channel, "my-sent-callee-id-name", switch_event_get_header_nil(event, "sent-callee-id-name"));
 								switch_channel_set_variable(channel, "my-sent-callee-id-number", switch_event_get_header_nil(event, "sent-callee-id-number"));
 							}
+							switch_core_session_rwunlock(session);
 					}
 
 				}
@@ -3043,6 +3048,7 @@ static void core_event_handler(switch_event_t *event)
 						if(channel != NULL) {
 							switch_channel_set_variable(channel, "my-call_uuid", switch_event_get_header_nil(event, "channel-call-uuid"));
 						}
+						switch_core_session_rwunlock(session);
 				}
 
 			}
@@ -3085,6 +3091,7 @@ static void core_event_handler(switch_event_t *event)
 						if(channel != NULL) {
 							switch_channel_set_variable(channel, "my-call_uuid", switch_event_get_header_nil(event, "channel-call-uuid"));
 						}
+						switch_core_session_rwunlock(session);
 				}
 
 			}
