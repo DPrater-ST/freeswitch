@@ -3517,6 +3517,8 @@ void *SWITCH_THREAD_FUNC sofia_stuck_removal_thread_run(switch_thread_t *thread,
 
 
 				}
+
+				switch_core_session_rwunlock(session);
 	
 			}
 

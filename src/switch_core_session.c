@@ -126,20 +126,40 @@ SWITCH_DECLARE(switch_core_session_t *) switch_core_session_fetch_running_perfor
 	struct entry *e;
 	switch_hashtable_t *h = session_manager.session_table;
 
+	switch_mutex_lock(runtime.session_hash_mutex);
+
 	for(i = 0; i < h->tablelength; i ++) {
 		e = h->table[i];
 		//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "i %d, e %p, last_one %p\n", i, (void *)e, last_one);
 		while (NULL != e) {
-			if(last_one == NULL) {
-					return e->v;
+			if(last_one == NULL) {	
+
+				switch_core_session_t *session = e->v;
+				/* Acquire a read lock on the session */
+				#ifdef SWITCH_DEBUG_RWLOCKS
+					if (switch_core_session_perform_read_lock(session, file, func, line) != SWITCH_STATUS_SUCCESS) {
+				#if EMACS_CC_MODE_IS_BUGGY
+				}
+				#endif
+				#else
+				if (switch_core_session_read_lock(session) != SWITCH_STATUS_SUCCESS) {
+				#endif
+					/* not available, forget it */
+					session = NULL;
+				}
+
+				if(session != NULL) {
+					switch_mutex_unlock(runtime.session_hash_mutex);
+					return session;	
+				}
 			} else if(last_one == e->v) {
 					last_one = NULL;
 			}
 			e = e->next;
 		}
 	}
-
-	return NULL;
+	switch_mutex_unlock(runtime.session_hash_mutex);
+	return NULL;	
 }
 
 
