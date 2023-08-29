@@ -59,6 +59,15 @@ extern su_log_t su_log_default[];
 static int is_stuck_thread_created = 0;
 static int stuck_remove_interval = 60;
 
+struct add_db_details {
+	char uid_one[128];
+	char type[32];
+	char uid_two[128];
+	struct add_db_details *next;
+};
+
+struct add_db_details * db_details_head = NULL;
+
 static void config_sofia_profile_urls(sofia_profile_t * profile);
 static void parse_gateways(sofia_profile_t *profile, switch_xml_t gateways_tag, const char *gwname);
 static void parse_domain_tag(sofia_profile_t *profile, switch_xml_t x_domain_tag, const char *dname, const char *parse, const char *alias);
@@ -3223,6 +3232,94 @@ int sofia_sip_stuck_removal_dialog_callback(void *pArg, int argc, char **argv, c
 }
 
 
+
+int sofia_sip_stuck_add_dialog_callback(void *pArg, int argc, char **argv, char **columnNames)
+{
+	sofia_profile_t *profile =  (sofia_profile_t *)pArg;
+	if (argc != 3) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "expected 1 arguments from query, instead got %d\n", argc);
+		return 0;
+	}
+
+	if(profile == NULL || profile->qm == NULL) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Profile pool is not available will retry in next time\n");
+			return 0;
+	}
+	else {
+
+		char *uid_one = argv[0]; // this uuid for sip_dialogs, calls and channels
+		char *type = argv[1]; // it is a type -> sip_dialogs : sip, calls: calls, channels : channels
+		char *uid_two = argv[2]; // for sip_dialogs it is call_id and channels it will be empty and calls it is peer channel uid
+		struct add_db_details * current = NULL;
+
+		struct add_db_details * details = (struct add_db_details*)malloc(sizeof(struct add_db_details));
+		memset(details, 0x0, sizeof(struct add_db_details));
+
+		strncpy(details->uid_one, uid_one, sizeof(details->uid_one) - 1);
+		strncpy(details->type , type, sizeof(details->type) - 1);
+		strncpy(details->uid_two, uid_two, sizeof(details->uid_two) - 1);
+		details->next = NULL;
+
+		if(!strcmp(type, "sip")) {
+			int status = check_sip_call_exist_or_not(argv[0]);
+			if(status == 0) {
+				char *sql = switch_mprintf("delete from sip_dialogs where call_id='%q'", argv[2]);
+				sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
+			}
+			else {
+				switch_core_session_t * session = switch_core_session_locate(uid_one);
+				if(session == NULL) {
+					char *sql = switch_mprintf("delete from sip_dialogs where call_id='%q'", argv[2]);
+					sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
+				}
+				else {
+					switch_core_session_rwunlock(session);
+				}
+			}
+		}
+		else if(!strcmp(type, "calls")) {
+			switch_core_session_t * session = switch_core_session_locate(uid_one);
+			if(session == NULL) {
+				char *sql = switch_mprintf("delete from calls where caller_uuid='%q' and callee_uuid='%q'", uid_one, uid_two);
+				sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
+			}
+			else {
+				switch_core_session_rwunlock(session);
+			}
+		}
+		else if(!strcmp(type, "channels")) {
+			switch_core_session_t * session = switch_core_session_locate(uid_one);
+			if(session == NULL) {
+				char *sql = switch_mprintf("delete from channels where uuid='%q'", uid_one);
+				sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
+			}
+			else {
+				switch_core_session_rwunlock(session);
+			}
+		}
+
+
+		//Insert at the end
+		
+		if(db_details_head == NULL) {
+			db_details_head = details;
+			return 0;
+		}
+
+		current = db_details_head;
+		while (current->next != NULL) {
+			current = current->next;
+		}
+
+		current->next = details;
+
+
+	}
+	
+	return 0;
+}
+
+
 // This thread is used for removing the stuck sip_dialogs
 void *SWITCH_THREAD_FUNC sofia_stuck_removal_thread_run(switch_thread_t *thread, void *obj) 
 {
@@ -3234,9 +3331,204 @@ void *SWITCH_THREAD_FUNC sofia_stuck_removal_thread_run(switch_thread_t *thread,
 
 		 for(;;) {
 
-			sql = switch_mprintf("select call_id, uuid from sip_dialogs where local_hostname = '%q'", switch_core_get_localip());  
-			sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_sip_stuck_removal_dialog_callback, profile);
+			int i = 0;
+			struct add_db_details * current = NULL;
+			struct add_db_details * temp = NULL;
+			switch_core_session_t *session = NULL;
+
+			db_details_head = NULL; // Making sure the details are empty
+
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "sofia_stuck_removal_thread_run Thread Executing\n");
+
+//			sql = switch_mprintf("select call_id, uuid from sip_dialogs where local_hostname = '%q'", switch_core_get_localip());  
+//			sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_sip_stuck_removal_dialog_callback, profile);
+//			switch_safe_free(sql);
+
+
+			sql = switch_mprintf("select uuid as uid, 'sip' as type, call_id as uid1 from sip_dialogs WHERE local_hostname = '%q' UNION select uuid as uid, 'channels' as type, '' as uid1 from channels WHERE local_hostname = '%q'  UNION select call_uuid as uid , 'calls' as type, callee_uuid as uid1 from calls WHERE local_hostname = '%q'", switch_core_get_localip(), switch_core_get_localip(), switch_core_get_localip());  
+			sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_sip_stuck_add_dialog_callback, profile);
 			switch_safe_free(sql);
+
+
+			// I am just breaking the loop ifit exceeds to reduce the cpu issue.It will not happen just prevent case
+			while( i ++ < 65535) {
+
+				switch_channel_t *channel = NULL;
+				private_object_t *tech_pvt = NULL;
+
+				session = switch_core_session_fetch_running(session);
+				if(session == NULL) {
+					break;
+				}
+
+				channel = switch_core_session_get_channel(session);
+				tech_pvt = switch_core_session_get_private(session);
+
+				//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "sofia_stuck_removal_thread_run session %p, loop %d, channel %p, tech_pvt %p\n", (void *)session, i, (void *)channel, (void *)tech_pvt);		
+
+				if(channel != NULL && tech_pvt != NULL) {
+
+					int in_sip_exist = 0;
+					int in_calls_exist = 0;
+					int in_channels_exist = 0;
+
+					// This must traverse in for loop
+					const char *uid = switch_core_session_get_uuid(session);
+					current = db_details_head;
+					while (current != NULL) {
+
+						if(!strcmp(current->type, "sip")) {
+							if(!strcmp(uid, current->uid_one)) {
+								in_sip_exist = 1;
+							}
+						} else if(!strcmp(current->type, "calls")) {
+							if(!strcmp(uid, current->uid_one)) {
+								in_calls_exist = 1;
+							}
+						} else if(!strcmp(current->type, "channels")) {
+							if(!strcmp(uid, current->uid_one)) {
+								in_channels_exist = 1;
+							}
+						}
+
+						if(in_sip_exist == 1 && in_calls_exist == 1 && in_channels_exist == 1) {
+							break;
+						}
+
+						current = current->next;
+					}
+
+//					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Not found session %p, session id %s in_sip_exist %d, in_calls_exist %d, in_channels_exist %d, is_bridged_call %d, state %d, CS_INIT %d\n", (void *)session, uid, in_sip_exist, in_calls_exist, in_channels_exist, switch_channel_test_flag(channel, CF_BRIDGE_ORIGINATOR), switch_channel_get_running_state(channel), CS_INIT);
+
+
+					if(in_sip_exist == 0) {
+						char *insert_sql = (char *)switch_channel_get_variable(channel, "SIP_DIALOG_INSERT_QUERY");
+						char *update_sql = (char *)switch_channel_get_variable(channel, "SIP_DIALOG_UPDATE_QUERY");
+						char *update_sql_totag = (char *)switch_channel_get_variable(channel, "SIP_DIALOG_UPDATE_QUERY_TOTAG");
+
+//						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "insert_sql %s\n", insert_sql);
+//						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "update_sql %s\n", update_sql);
+//						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "update_sql_totag %s\n", update_sql_totag);
+
+						if(insert_sql != NULL) {
+							char *sql = switch_mprintf("%s", insert_sql);
+							sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
+						}
+
+						if(update_sql!= NULL) {
+							char *sql = switch_mprintf("%s", update_sql);
+							sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
+						}
+
+						if(update_sql_totag != NULL) {
+							char *sql = switch_mprintf("%s", update_sql_totag);
+							sofia_glue_execute_sql(profile, &sql, SWITCH_TRUE);
+						}
+
+											
+					}
+
+					if(in_channels_exist == 0) {
+
+						// Check wether the state is 
+						switch_event_t *event;
+						//switch_event_t *event_one;
+						const char *time = switch_channel_get_variable(channel, "CHANNEL_CREATE_TIME");
+
+
+						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Not found in channels adding session %p, session id %s, time %s \n",  (void *)session, uid, time);
+
+//						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "application %s, application_data %s, callee_direction %s, call_uuid %s, sent_callee_name %s, sent_callee_num %s\n", switch_channel_get_variable(channel, "my-application"), switch_channel_get_variable(channel, "my-application-data"), switch_channel_get_variable(channel, "my-direction"), switch_channel_get_variable(channel, "my-call_uuid"), switch_channel_get_variable(channel, "my-sent-callee-id-name"), switch_channel_get_variable(channel, "my-sent-callee-id-number"));
+
+
+						if (switch_event_create(&event, SWITCH_EVENT_CHANNEL_CREATE_ON_RETRY) == SWITCH_STATUS_SUCCESS) {
+							switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "CHANNEL_CREATE_TIME", time);
+
+							if(switch_channel_get_variable(channel, "my-application") != NULL) {
+								switch_event_add_header_string(event, SWITCH_STACK_BOTTOM , "my-application", switch_channel_get_variable(channel, "my-application"));
+							}
+
+
+							if(switch_channel_get_variable(channel, "my-application-data") != NULL) {
+								switch_event_add_header_string(event, SWITCH_STACK_BOTTOM , "my-application-data", switch_channel_get_variable(channel, "my-application-data"));
+							}
+
+
+							if(switch_channel_get_variable(channel, "my-direction") != NULL) {
+								switch_event_add_header_string(event, SWITCH_STACK_BOTTOM , "my-direction", switch_channel_get_variable(channel, "my-direction"));
+							}
+
+
+							if(switch_channel_get_variable(channel,  "my-call_uuid") != NULL) {
+								switch_event_add_header_string(event, SWITCH_STACK_BOTTOM , "my-call_uuid" , switch_channel_get_variable(channel,  "my-call_uuid"));
+							}
+
+
+							if(switch_channel_get_variable(channel, "my-sent-callee-id-name") != NULL) {
+								switch_event_add_header_string(event, SWITCH_STACK_BOTTOM , "my-sent-callee-id-name", switch_channel_get_variable(channel, "my-sent-callee-id-name"));
+							}
+
+
+							if(switch_channel_get_variable(channel, "my-sent-callee-id-number") != NULL) {
+								switch_event_add_header_string(event, SWITCH_STACK_BOTTOM , "my-sent-callee-id-number", switch_channel_get_variable(channel, "my-sent-callee-id-number"));
+							}
+
+							switch_channel_event_set_data(channel, event);
+							switch_event_fire(&event);
+						} else {
+								switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Not able to create event SWITCH_EVENT_CHANNEL_CREATE_ON_RETRY\n");
+						}
+
+						switch_core_session_update_codec_events_on_retry(session);
+
+					}
+
+					if(in_calls_exist == 0) {
+
+						// Not exist in calls. Lets check wether this user is caller or not if yes then fetch the peer channel uid
+
+						if (switch_channel_test_flag(channel, CF_BRIDGE_ORIGINATOR)) {
+							switch_event_t *event;
+							const char *time = switch_channel_get_variable(channel, "CHANNEL_BRIDGE_TIME");
+							const char *uid1 = switch_channel_get_variable(channel, SWITCH_BRIDGE_UUID_VARIABLE);
+
+							switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Not found calls adding session %p, session id %s uid1 %s, time %s\n",  (void *)session, uid, uid1, time);
+							
+							if (switch_event_create(&event, SWITCH_EVENT_CHANNEL_BRIDGE_ON_RETRY) == SWITCH_STATUS_SUCCESS) {
+
+								switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Not found calls Firing the event adding session %p, session id %s uid1 %s\n",  (void *)session, uid, uid1);
+
+								switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Bridge-A-Unique-ID", switch_core_session_get_uuid(session));
+								switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Bridge-B-Unique-ID", uid1);
+								switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "CHANNEL_BRIDGE_TIME", time);
+								switch_channel_event_set_data(channel, event);
+								switch_event_fire(&event);
+							}
+							else {
+									switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Not able to create event SWITCH_EVENT_CHANNEL_BRIDGE_ON_RETRY\n");
+							}
+
+						}
+
+					}
+
+
+
+
+
+				}
+
+				switch_core_session_rwunlock(session);
+	
+			}
+
+			// Removing the result
+			current = db_details_head;
+			while (current != NULL) {
+				temp = current;
+				current = current->next;
+				free(temp);
+			}
 
 			sleep(stuck_remove_interval); // Default 5 mins
 
@@ -6705,6 +6997,8 @@ static void sofia_handle_sip_r_invite(switch_core_session_t *session, int status
 							switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "QUERY SQL %s\n", sql);
 						}
 
+						switch_channel_set_variable(channel, "SIP_DIALOG_UPDATE_QUERY", sql);
+
 						sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
 
 						switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_WARNING, "Auto-Fixing Broken SLA [<sip:%s>;%s]\n",
@@ -7159,6 +7453,7 @@ static void sofia_handle_sip_r_invite(switch_core_session_t *session, int status
 										 switch_str_nil(presence_id), switch_str_nil(presence_data), switch_str_nil(p), (long) now, switch_core_get_localip());
 					switch_assert(sql);
 
+					switch_channel_set_variable(channel, "SIP_DIALOG_INSERT_QUERY", sql);
 					sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
 
 					if ( full_contact ) {
@@ -7174,6 +7469,7 @@ static void sofia_handle_sip_r_invite(switch_core_session_t *session, int status
 									 "where uuid='%q';\n", astate, switch_str_nil(presence_id), switch_str_nil(presence_data),
 									 switch_core_session_get_uuid(session));
 				switch_assert(sql);
+				switch_channel_set_variable(channel, "SIP_DIALOG_UPDATE_QUERY", sql);
 				sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
 			}
 
@@ -7495,7 +7791,7 @@ static void sofia_handle_sip_i_state(switch_core_session_t *session, int status,
 		to_tag = switch_str_nil(switch_channel_get_variable(channel, "sip_to_tag"));
 		sql = switch_mprintf("update sip_dialogs set sip_to_tag='%q' "
 				"where uuid='%q' and sip_to_tag = ''", to_tag, switch_core_session_get_uuid(session));
-
+		switch_channel_set_variable(channel, "SIP_DIALOG_UPDATE_QUERY_TOTAG", sql);
 		if (mod_sofia_globals.debug_presence > 1) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "QUERY SQL %s\n", sql);
 		}
@@ -11234,6 +11530,7 @@ void sofia_handle_sip_i_invite(switch_core_session_t *session, nua_t *nua, sofia
 					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "QUERY SQL %s\n", sql);
 				}
 
+				switch_channel_set_variable(channel, "SIP_DIALOG_UPDATE_QUERY", sql);
 				sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
 
 
@@ -11614,6 +11911,7 @@ void sofia_handle_sip_i_invite(switch_core_session_t *session, nua_t *nua, sofia
 
 		switch_assert(sql);
 
+		switch_channel_set_variable(channel, "SIP_DIALOG_INSERT_QUERY", sql);
 		sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
 
 		if ( full_contact ) {
@@ -11702,6 +12000,7 @@ void sofia_handle_sip_i_invite_replaces(switch_core_session_t *session, switch_c
 				if (mod_sofia_globals.debug_sla > 1) {
 					switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "QUERY SQL %s\n", sql);
 				}
+				switch_channel_set_variable(channel, "SIP_DIALOG_UPDATE_QUERY", sql);
 				sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
 
 				switch_channel_presence(b_channel, "unknown", "idle", NULL);

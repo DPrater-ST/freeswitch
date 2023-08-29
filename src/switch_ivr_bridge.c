@@ -1379,6 +1379,13 @@ static switch_status_t signal_bridge_on_hibernate(switch_core_session_t *session
 
 
 	if (switch_channel_test_flag(channel, CF_BRIDGE_ORIGINATOR)) {
+
+		char buf[128];
+
+		memset(buf, 0x0, sizeof(buf));	
+		snprintf(buf, sizeof(buf) -1 , "%ld", (long) switch_epoch_time_now(NULL));
+		switch_channel_set_variable(channel, "CHANNEL_BRIDGE_TIME", buf);
+
 		if (switch_event_create(&event, SWITCH_EVENT_CHANNEL_BRIDGE) == SWITCH_STATUS_SUCCESS) {
 			switch_core_session_t *other_session;
 
@@ -1394,6 +1401,8 @@ static switch_status_t signal_bridge_on_hibernate(switch_core_session_t *session
 				switch_core_session_rwunlock(other_session);
 			}
 			switch_event_fire(&event);
+
+
 		}
 	}
 
@@ -1676,6 +1685,7 @@ SWITCH_DECLARE(switch_status_t) switch_ivr_multi_threaded_bridge(switch_core_ses
 	if (switch_channel_test_flag(peer_channel, CF_ANSWERED) || switch_channel_test_flag(peer_channel, CF_EARLY_MEDIA) ||
 		switch_channel_test_flag(peer_channel, CF_RING_READY)) {
 		const char *app, *data;
+		char buf[128];
 
  		if (!switch_channel_ready(caller_channel)) {
 			abort_call(caller_channel, peer_channel);
@@ -1690,6 +1700,11 @@ SWITCH_DECLARE(switch_status_t) switch_ivr_multi_threaded_bridge(switch_core_ses
 
 		switch_channel_set_bridge_time(caller_channel);
 		switch_channel_set_bridge_time(peer_channel);
+
+		memset(buf, 0x0, sizeof(buf));	
+		snprintf(buf, sizeof(buf) -1 , "%ld", (long) switch_epoch_time_now(NULL));
+		switch_channel_set_variable(caller_channel, "CHANNEL_BRIDGE_TIME", buf);
+
 
 		if (switch_event_create(&event, SWITCH_EVENT_CHANNEL_BRIDGE) == SWITCH_STATUS_SUCCESS) {
 			switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Bridge-A-Unique-ID", switch_core_session_get_uuid(session));
