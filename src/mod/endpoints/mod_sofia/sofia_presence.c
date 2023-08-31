@@ -1379,9 +1379,7 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 				}
 
 
-
-				if (!zstr(call_id)) {
-
+				if (zstr(uuid)) {
 
 					if(!strcmp(proto, "park")) {
 
@@ -1396,7 +1394,6 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 					}
 				} else {
 
-
 					sql = switch_mprintf("select state,status,rpid,presence_id,uuid from sip_dialogs "
 									 "where uuid != '%q' and call_info_state != 'seized' and hostname='%q' and profile_name='%q' and "
 									 "((sip_from_user='%q' and sip_from_host='%q') or presence_id='%q@%q') order by rcd desc",
@@ -1409,8 +1406,6 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 				if (mod_sofia_globals.debug_presence > 0) {
 					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "CHECK SQL: %s@%s [%s]\nhits: %d\n", euser, host, sql, dh.hits);
 				}
-
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "CHECK SQL: %s@%s [%s]\nhits: %d\n", euser, host, sql, dh.hits);
 
 				switch_safe_free(sql);
 
