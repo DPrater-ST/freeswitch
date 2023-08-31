@@ -1385,7 +1385,11 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 
 					if(!strcmp(proto, "park")) {
 
-						sql = switch_mprintf("select state,status,rpid,presence_id,uuid, 1 as park  from sip_dialogs where uuid in (select uuid from channels where hostname='%q' and application = 'valet_park' and application_data ='%q@%q %q') and profile_name='%q'", mod_sofia_globals.hostname, euser, host, euser, profile->name);
+
+						//sql = switch_mprintf("select state,status,rpid,presence_id,uuid, 1 as park  from sip_dialogs where uuid in (select uuid from channels where hostname='%q' and application = 'valet_park' and application_data ='%q@%q %q') and profile_name='%q'", mod_sofia_globals.hostname, euser, host, euser, profile->name);
+
+						sql = switch_mprintf("select 'confirmed' as state, NULL as status , NULL as rpid,  '%q@%q' as presence_id, uuid, 1 as park from channels where hostname='%q' and application = 'valet_park' and application_data ='%q@%q %q'", euser, host, mod_sofia_globals.hostname, euser, host, euser);
+
 
 					} else {	 
 
@@ -1410,7 +1414,6 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "CHECK SQL: %s@%s [%s]\nhits: %d\n", euser, host, sql, dh.hits);
 				}
 
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "CHECK SQL: %s@%s [%s]\nhits: %d\n", euser, host, sql, dh.hits);
 
 				switch_safe_free(sql);
 
