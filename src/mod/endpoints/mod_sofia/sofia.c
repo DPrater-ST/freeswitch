@@ -10637,6 +10637,8 @@ void sofia_handle_sip_i_invite(switch_core_session_t *session, nua_t *nua, sofia
 	sip_call_info_t *call_info = NULL;
 	private_object_t *tech_pvt = NULL;
 	switch_channel_t *channel = NULL;
+	sip_identity_t *identity = NULL;
+	sip_date_t *date = NULL;
 	//const char *channel_name = NULL;
 	const char *displayname = NULL;
 	const char *destination_number = NULL;
@@ -11475,6 +11477,18 @@ void sofia_handle_sip_i_invite(switch_core_session_t *session, nua_t *nua, sofia
 		su_free(nh->nh_home, tmp);
 	}
 
+	if ((identity = sip_identity(sip))) {
+		char *tmp = sip_header_as_string(nh->nh_home, (void *) identity);
+		switch_channel_set_variable(channel, "SIP_IDENTITY", tmp);
+		su_free(nh->nh_home, tmp);
+	}
+
+	if ((date= sip_date(sip))) {
+		char *tmp = sip_header_as_string(nh->nh_home, (void *) date);
+		switch_channel_set_variable(channel, "SIP_IDENTITY_DATE", tmp);
+		su_free(nh->nh_home, tmp);
+	}
+
 	if ((call_info = sip_call_info(sip))) {
 		call_info_str = sip_header_as_string(nh->nh_home, (void *) call_info);
 
@@ -11762,6 +11776,7 @@ void sofia_handle_sip_i_invite(switch_core_session_t *session, nua_t *nua, sofia
 
 		/* Loop thru unknown Headers Here so we can do something with them */
 		for (un = sip->sip_unknown; un; un = un->un_next) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Headers here un->un_name %s, un->un_value %s\n", un->un_name, un->un_value);
 			if (!strncasecmp(un->un_name, "Accept-Language", 15)) {
 				if (!zstr(un->un_value)) {
 					char *tmp_name;
