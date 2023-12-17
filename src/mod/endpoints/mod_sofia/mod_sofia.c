@@ -4876,6 +4876,8 @@ static switch_call_cause_t sofia_outgoing_channel(switch_core_session_t *session
 			goto error;
 		}
 
+		profile = gateway_ptr->profile;
+
 		if (gateway_ptr->status != SOFIA_GATEWAY_UP) {
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Gateway \'%s\' is down!\n", gw);
 			cause = SWITCH_CAUSE_GATEWAY_DOWN;
