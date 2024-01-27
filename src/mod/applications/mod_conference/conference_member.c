@@ -1057,7 +1057,7 @@ switch_status_t conference_member_add(conference_obj_t *conference, conference_m
 	}
 
 
-	conference_event_send_rfc(conference);
+	conference_event_send_rfc(member, conference);
 	conference_event_send_json(conference);
 
 
@@ -1350,7 +1350,7 @@ switch_status_t conference_member_del(conference_obj_t *conference, conference_m
 		conference_event_adv_la(conference, member, SWITCH_FALSE);
 	}
 
-	conference_event_send_rfc(conference);
+	conference_event_send_rfc(member, conference);
 	conference_event_send_json(conference);
 
 	if (conference_utils_test_flag(conference, CFLAG_POSITIONAL)) {

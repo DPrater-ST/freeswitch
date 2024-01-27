@@ -904,6 +904,8 @@ struct conference_member {
 	mcu_layer_cam_opts_t cam_opts;
 	switch_core_video_filter_t video_filters;
 	int video_manual_border;
+	int conference_count_b4_add;
+	int conference_count_b4_del;
 };
 
 typedef enum {
@@ -1049,7 +1051,8 @@ switch_status_t conference_record_action(conference_obj_t *conference, char *pat
 void conference_xlist(conference_obj_t *conference, switch_xml_t x_conference, int off);
 void conference_jlist(conference_obj_t *conference, cJSON *json_conferences);
 void conference_event_send_json(conference_obj_t *conference);
-void conference_event_send_rfc(conference_obj_t *conference);
+void conference_event_send_rfc_old(conference_obj_t *conference);
+void conference_event_send_rfc(conference_member_t *member, conference_obj_t *conference);
 void conference_member_update_status_field(conference_member_t *member);
 void conference_event_la_command_handler(switch_live_array_t *la, const char *cmd, const char *sessid, cJSON *jla, void *user_data);
 void conference_event_adv_la(conference_obj_t *conference, conference_member_t *member, switch_bool_t join);

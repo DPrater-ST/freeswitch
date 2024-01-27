@@ -41,6 +41,12 @@
  */
 #include <mod_conference.h>
 
+#define NOTIFY_FLAG_CAN_HEAR 1 << 1
+#define NOTIFY_FLAG_CAN_SEE 1 << 2
+#define NOTIFY_FLAG_CAN_BE_SEEN 1 << 3
+#define NOTIFY_FLAG_CAN_SPEAK 1 << 4
+#define NOTIFY_FLAG_TALKING 1 << 5
+#define NOTIFY_FLAG_IS_MODERATOR 1 << 6
 
 static inline switch_bool_t conference_cdr_test_mflag(conference_cdr_node_t *np, member_flag_t mflag)
 {
@@ -62,8 +68,7 @@ const char *conference_cdr_audio_flow(conference_member_t *member)
 	return flow;
 }
 
-
-char *conference_cdr_rfc4579_render(conference_obj_t *conference, switch_event_t *event, switch_event_t *revent)
+char *conference_cdr_rfc4579_render_old(conference_obj_t *conference, switch_event_t *event, switch_event_t *revent)
 {
 	switch_xml_t xml, x_tag, x_tag1, x_tag2, x_tag3, x_tag4, x_tag5, x_flags;
 	char tmp[30];
@@ -342,6 +347,35 @@ char *conference_cdr_rfc4579_render(conference_obj_t *conference, switch_event_t
                 		switch_xml_set_txt_d(x_tag5, conference_utils_member_test_flag(np->member, MFLAG_MOD) ? "true" : "false");
 
 			}
+			else {
+
+				x_flags = switch_xml_add_child_d(x_tag1, "flags", off2++);
+				switch_assert(x_flags);
+
+				switch_snprintf(i, sizeof(i), "%d", np->member->id);
+				x_tag5 = switch_xml_add_child_d(x_flags, "id", off2++);
+				switch_xml_set_txt_d(x_tag5, i);
+
+				x_tag5 = switch_xml_add_child_d(x_flags, "can_hear", off2++);
+				switch_xml_set_txt_d(x_tag5, (!hold && conference_utils_member_test_flag(np->member, MFLAG_CAN_HEAR)) ? "true" : "false");
+
+				x_tag5 = switch_xml_add_child_d(x_flags, "can_see", off2++);
+				switch_xml_set_txt_d(x_tag5, "false");
+
+				x_tag5 = switch_xml_add_child_d(x_flags, "can_be_seen", off2++);
+				switch_xml_set_txt_d(x_tag5, "false");
+
+				x_tag5 = switch_xml_add_child_d(x_flags, "can_speak", off2++);
+				switch_xml_set_txt_d(x_tag5, (!hold && conference_utils_member_test_flag(np->member, MFLAG_CAN_SPEAK)) ? "true" : "false");
+
+				x_tag5 = switch_xml_add_child_d(x_flags, "talking", off2++);
+				switch_xml_set_txt_d(x_tag5, (!hold && conference_utils_member_test_flag(np->member, MFLAG_TALKING)) ? "true" : "false");
+
+				x_tag5 = switch_xml_add_child_d(x_flags, "is_moderator",  off2++); 
+                		switch_xml_set_txt_d(x_tag5, conference_utils_member_test_flag(np->member, MFLAG_MOD) ? "true" : "false");
+
+
+			}
 		}
 
 		switch_safe_free(user_uri);
@@ -354,6 +388,105 @@ char *conference_cdr_rfc4579_render(conference_obj_t *conference, switch_event_t
 
 	switch_safe_free(dup_domain);
 	switch_safe_free(uri);
+
+	return xml_text;
+}
+
+
+
+char *conference_cdr_rfc4579_render(conference_obj_t *conference, switch_event_t *event, switch_event_t *revent)
+{
+	switch_xml_t xml, x_tag, x_tag1;
+	char tmp[30];
+	char i[30] = "";
+	const char *name;
+	int off = 0, off1 = 0, off2 = 0, off3 = 0, off4 = 0;
+	conference_cdr_node_t *np;
+	char *tmpp = tmp;
+	char *xml_text = NULL;
+
+	if (!(xml = switch_xml_new("conference-info"))) {
+		abort();
+	}
+
+	switch_mutex_lock(conference->mutex);
+	switch_snprintf(tmp, sizeof(tmp), "%u", conference->doc_version);
+	conference->doc_version++;
+	switch_mutex_unlock(conference->mutex);
+
+	if (!event || !(name = switch_event_get_header(event, "conference-name"))) {
+		if (!(name = conference->name)) {
+			name = "conference";
+		}
+	}
+
+	switch_xml_set_attr_d(xml, "version", tmpp);
+
+	switch_xml_set_attr_d(xml, "state", "full");
+	switch_xml_set_attr_d(xml, "xmlns", "urn:ietf:params:xml:ns:conference-info");
+
+	if (conference_utils_test_flag(conference, CFLAG_LOCKED)) {
+		switch_xml_set_attr_d(xml, "locked", "true");
+	} else {
+		switch_xml_set_attr_d(xml, "locked", "false");
+	}
+
+	switch_xml_set_attr_d(xml, "entity", name);
+	
+	off1 = off2 = off3 = off4 = 0;
+
+	if (!(x_tag = switch_xml_add_child_d(xml, "users", off++))) {
+		abort();
+	}
+
+	switch_mutex_lock(conference->member_mutex);
+
+	for (np = conference->cdr_nodes; np; np = np->next) {
+		int flags = 0;
+		switch_channel_t *channel = NULL;
+
+		if (!np->cp || (np->member && !np->member->session) || np->leave_time) { /* for now we'll remove participants when the leave */
+			continue;
+		}
+
+		if (np->member && np->member->session) {
+			channel = switch_core_session_get_channel(np->member->session);
+		}
+
+		if (!(x_tag1 = switch_xml_add_child_d(x_tag, "user", off1++))) {
+			abort();
+		}
+
+		switch_xml_set_attr_d(x_tag1, "name", np->cp->caller_id_name);
+
+		memset(i, 0x0, sizeof(i));
+		switch_snprintf(i, sizeof(i), "%d", np->member->id);
+		switch_xml_set_attr_d(x_tag1, "id", i);
+
+		if (np->member) {
+			switch_bool_t hold = conference_utils_member_test_flag(np->member, MFLAG_HOLD);
+
+			flags += (!hold && conference_utils_member_test_flag(np->member, MFLAG_CAN_HEAR)) ? NOTIFY_FLAG_CAN_HEAR : 0;
+			if (switch_channel_test_flag(channel, CF_VIDEO)) {
+				flags += (!hold && conference_utils_member_test_flag(np->member, MFLAG_CAN_SEE)) ? NOTIFY_FLAG_CAN_SEE : 0;
+				flags += (!hold && conference_utils_member_test_flag(np->member, MFLAG_CAN_BE_SEEN)) ? NOTIFY_FLAG_CAN_BE_SEEN : 0;
+			}
+			flags += (!hold && conference_utils_member_test_flag(np->member, MFLAG_CAN_SPEAK)) ? NOTIFY_FLAG_CAN_SPEAK : 0;
+			flags += (!hold && conference_utils_member_test_flag(np->member, MFLAG_TALKING)) ? NOTIFY_FLAG_TALKING : 0;
+			flags += conference_utils_member_test_flag(np->member, MFLAG_MOD) ? NOTIFY_FLAG_IS_MODERATOR : 0;
+		}
+
+		memset(i, 0x0, sizeof(i));
+		switch_snprintf(i, sizeof(i), "%d", flags);
+		switch_xml_set_attr_d(x_tag1, "flags", i);
+
+	}
+
+	switch_mutex_unlock(conference->member_mutex);
+
+	xml_text = switch_xml_toxml(xml, SWITCH_TRUE);
+	switch_xml_free(xml);
+
 
 	return xml_text;
 }

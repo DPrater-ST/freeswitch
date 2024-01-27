@@ -1922,6 +1922,10 @@ SWITCH_STANDARD_APP(conference_function)
 	int mpin_matched = 0;
 	uint32_t *mid;
 
+
+	member.conference_count_b4_add = 0;
+	member.conference_count_b4_del = 0;
+
 	if (!switch_channel_test_app_flag_key("conference_silent", channel, CONF_SILENT_DONE) &&
 		(switch_channel_test_flag(channel, CF_RECOVERED) || switch_true(switch_channel_get_variable(channel, "conference_silent_entry")))) {
 		switch_channel_set_app_flag_key("conference_silent", channel, CONF_SILENT_REQ);
@@ -2249,6 +2253,10 @@ SWITCH_STANDARD_APP(conference_function)
 			mdpin = conference->mpin;
 		}
 
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "add conference count %d\n", conference->count);
+
+		member.conference_count_b4_add = conference->count;
+
 		/* Tell the channel we have a new Session-ID */
 		msg.from = __FILE__;
 		msg.message_id = SWITCH_MESSAGE_INDICATE_SESSION_ID;
@@ -2509,6 +2517,7 @@ SWITCH_STANDARD_APP(conference_function)
 		} while (member.loop_loop);
 	}
 
+
 	switch_core_session_video_reset(session);
 	switch_channel_clear_flag_recursive(channel, CF_VIDEO_DECODED_READ);
 
@@ -2541,6 +2550,11 @@ SWITCH_STANDARD_APP(conference_function)
 		switch_thread_join(&st, member.video_layer_thread);
 		member.video_layer_thread = NULL;
 	}
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "delete conference count %d\n", conference->count);
+
+
+	member.conference_count_b4_del = conference->count;
 
 	/* Remove the caller from the conference */
 	conference_member_del(member.conference, &member);

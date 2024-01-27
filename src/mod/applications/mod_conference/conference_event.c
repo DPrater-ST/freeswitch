@@ -703,7 +703,74 @@ void conference_event_adv_la(conference_obj_t *conference, conference_member_t *
 	}
 }
 
-void conference_event_send_rfc(conference_obj_t *conference)
+void conference_event_send_rfc(conference_member_t *member, conference_obj_t *conference)
+{
+	switch_event_t *event;
+	char *body;
+	char *name = NULL, *domain = NULL, *dup_domain = NULL;
+
+	if (!conference_utils_test_flag(conference, CFLAG_RFC4579)) {
+		return;
+	}
+
+
+	if(member->conference_count_b4_del == 0) { // This is member add
+		
+			if(member->conference_count_b4_add + 2 < conference->count) {
+
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Discording Add conference count %d, conference_count_b4_add %d, conference_count_b4_del %d\n", conference->count, member->conference_count_b4_add, member->conference_count_b4_del);
+					return;
+			}
+
+	} else if(conference->count > 1) { // conference count 1 or zero we must send
+			// Deleting member here
+			
+			if(member->conference_count_b4_del - 2 > conference->count) {
+
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Discording Del conference count %d, conference_count_b4_add %d, conference_count_b4_del %d\n", conference->count, member->conference_count_b4_add, member->conference_count_b4_del);
+					return;
+			}
+
+	}
+	
+
+	if (!(name = conference->name)) {
+		name = "conference";
+	}
+
+	if (!(domain = conference->domain)) {
+		dup_domain = switch_core_get_domain(SWITCH_TRUE);
+		if (!(domain = dup_domain)) {
+			domain = "cluecon.com";
+		}
+	}
+
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "conference count %d, conference_count_b4_add %d, conference_count_b4_del %d\n", conference->count, member->conference_count_b4_add, member->conference_count_b4_del);
+
+
+
+	if (switch_event_create(&event, SWITCH_EVENT_CONFERENCE_DATA) == SWITCH_STATUS_SUCCESS) {
+		event->flags |= EF_UNIQ_HEADERS;
+
+		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "conference-name", name);
+		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "conference-domain", domain);
+
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Member adding here %d\n", member->id);
+
+		body = conference_cdr_rfc4579_render(conference, NULL, event);
+		switch_event_add_body(event, "%s", body);
+		free(body);
+		switch_event_fire(&event);
+	}
+
+	switch_safe_free(dup_domain);
+
+}
+
+
+
+void conference_event_send_rfc_old(conference_obj_t *conference)
 {
 	switch_event_t *event;
 	char *body;
@@ -961,7 +1028,7 @@ void conference_event_pres_handler(switch_event_t *event)
 			switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "call-direction", conference->count == 1 ? "outbound" : "inbound");
 			switch_event_fire(&event);
 		}
-		conference_event_send_rfc(conference); // Generate conference data event with RFC CDR
+		conference_event_send_rfc_old(conference); // Generate conference data event with RFC CDR
 		switch_thread_rwlock_unlock(conference->rwlock);
 	} else if (switch_event_create(&event, SWITCH_EVENT_PRESENCE_IN) == SWITCH_STATUS_SUCCESS) {
 		switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "proto", CONF_CHAT_PROTO);
