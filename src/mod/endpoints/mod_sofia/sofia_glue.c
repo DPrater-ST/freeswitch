@@ -2651,6 +2651,8 @@ int sofia_glue_init_sql(sofia_profile_t *profile)
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Query failed %s, err : %s\n", sql, err);
 	}
 
+#if 0
+	// The indexes automatically creating here even though we set auto create schema to false
 	for (x = 0; indexes[x]; x++) {
 		memset(query, 0x0, sizeof(query));
 		strncpy(query, (char *)indexes[x], sizeof(query) - 1);	
@@ -2659,6 +2661,7 @@ int sofia_glue_init_sql(sofia_profile_t *profile)
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Query failed %s, err : %s\n", sql, err);
 		}
 	}
+#endif
 
 	test_sql = switch_mprintf("delete from sip_registrations where sub_host is null "
 							  "and hostname='%q' "
