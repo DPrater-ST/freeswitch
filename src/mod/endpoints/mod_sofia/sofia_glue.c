@@ -2911,6 +2911,45 @@ switch_bool_t sofia_glue_execute_sql_callback(sofia_profile_t *profile,
 	return ret;
 }
 
+
+switch_bool_t sofia_glue_execute_update_select_single_sql_callback(sofia_profile_t *profile,
+											  switch_mutex_t *mutex, char *update_sql, char *select_sql , switch_core_db_callback_func_t callback, void *pdata)
+{
+	switch_bool_t ret = SWITCH_FALSE;
+	char *errmsg = NULL;
+	switch_cache_db_handle_t *dbh = NULL;
+
+	if (mutex) {
+		switch_mutex_lock(mutex);
+	}
+
+	if (!(dbh = sofia_glue_get_db_handle(profile))) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error Opening DB\n");
+
+		if (mutex) {
+			switch_mutex_unlock(mutex);
+		}
+
+		return ret;
+	}
+
+	switch_cache_db_execute_update_select_single_sql_callback(dbh,  update_sql, select_sql, callback, pdata, &errmsg);
+
+	if (mutex) {
+		switch_mutex_unlock(mutex);
+	}
+
+	if (errmsg) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL ERR: [%s][%s] %s\n", update_sql, select_sql, errmsg);
+		free(errmsg);
+	}
+
+	switch_cache_db_release_db_handle(&dbh);
+
+	return ret;
+}
+
+
 char *sofia_glue_execute_sql2str(sofia_profile_t *profile, switch_mutex_t *mutex, char *sql, char *resbuf, size_t len)
 {
 	char *ret = NULL;

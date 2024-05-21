@@ -1081,6 +1081,11 @@ char *sofia_overcome_sip_uri_weakness(switch_core_session_t *session, const char
 									  const char *params, const char *invite_tel_params);
 switch_bool_t sofia_glue_execute_sql_callback(sofia_profile_t *profile, switch_mutex_t *mutex, char *sql, switch_core_db_callback_func_t callback,
 											  void *pdata);
+
+
+switch_bool_t sofia_glue_execute_update_select_single_sql_callback(sofia_profile_t *profile, switch_mutex_t *mutex, char *update_sql, char *select_sql, switch_core_db_callback_func_t callback,
+											  void *pdata);
+
 char *sofia_glue_execute_sql2str(sofia_profile_t *profile, switch_mutex_t *mutex, char *sql, char *resbuf, size_t len);
 void sofia_glue_del_profile(sofia_profile_t *profile);
 
