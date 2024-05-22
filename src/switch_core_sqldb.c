@@ -1325,6 +1325,89 @@ SWITCH_DECLARE(switch_status_t) switch_cache_db_execute_sql_event_callback_err(s
 	return status;
 }
 
+
+SWITCH_DECLARE(switch_status_t) switch_cache_db_execute_update_select_single_sql_callback(switch_cache_db_handle_t *dbh,
+																	 const char *update_sql, const char *select_sql, switch_core_db_callback_func_t callback, void *pdata, char **err)
+{
+	switch_status_t status = SWITCH_STATUS_FALSE;
+	char *errmsg = NULL;
+	switch_mutex_t *io_mutex = dbh->io_mutex;
+
+	if (err) {
+		*err = NULL;
+	}
+
+	if (io_mutex) switch_mutex_lock(io_mutex);
+
+
+	switch (dbh->type) {
+		case SCDB_TYPE_DATABASE_INTERFACE:
+		{
+			switch_database_interface_t *database_interface = dbh->native_handle.database_interface_dbh->connection_options.database_interface;
+
+			if ((status = database_interface_handle_callback_exec(database_interface, dbh->native_handle.database_interface_dbh, select_sql, callback, pdata, err)) != SWITCH_STATUS_SUCCESS) {
+				char tmp[100];
+				switch_snprintfv(tmp, sizeof(tmp), "%q-%i", "Unable to execute_sql_callback", status);
+			}
+		}
+		break;
+	case SCDB_TYPE_ODBC:
+		{
+			switch_odbc_status_t result;
+			if ((result = switch_odbc_SQLSetAutoCommitAttr(dbh->native_handle.odbc_dbh, 0)) != SWITCH_ODBC_SUCCESS) {
+					char tmp[100];
+					switch_snprintfv(tmp, sizeof(tmp), "%q-%i", "Unable to Set AutoCommit Off", result);
+					errmsg = strdup(tmp);
+					status = SWITCH_STATUS_FALSE;
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL ERR: [%s][%s] %s\n", update_sql, select_sql, errmsg);
+			}
+			else {
+				status = switch_odbc_handle_exec(dbh->native_handle.odbc_dbh, update_sql, NULL, &errmsg);
+				if(status != SWITCH_STATUS_SUCCESS) {
+					switch_odbc_SQLEndTran(dbh->native_handle.odbc_dbh, 0);
+					*err = errmsg;
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL UPDATE ERR: [%s][%s] %s\n", update_sql, select_sql, errmsg);
+				} else {
+					status = switch_odbc_handle_callback_exec(dbh->native_handle.odbc_dbh, select_sql, callback, pdata, err);
+					if(status != SWITCH_STATUS_SUCCESS) {
+						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL UPDATE ERR: [%s][%s] %s\n", update_sql, select_sql, errmsg);
+						switch_odbc_SQLEndTran(dbh->native_handle.odbc_dbh, 0);
+					} else {
+						switch_odbc_SQLEndTran(dbh->native_handle.odbc_dbh, 1);
+					}
+				}
+				switch_odbc_SQLSetAutoCommitAttr(dbh->native_handle.odbc_dbh, 1);
+				//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL UPDATE SELECT DONE status [%d] [%s][%s] %s\n", status, update_sql, select_sql, errmsg);
+			}
+		}
+		break;
+	case SCDB_TYPE_CORE_DB:
+		{
+			
+			int ret = switch_core_db_exec(dbh->native_handle.core_db_dbh->handle, select_sql, callback, pdata, &errmsg);
+
+			if (ret == SWITCH_CORE_DB_OK || ret == SWITCH_CORE_DB_ABORT) {
+				status = SWITCH_STATUS_SUCCESS;
+			}
+
+			if (errmsg) {
+				dbh->last_used = switch_epoch_time_now(NULL) - (SQL_CACHE_TIMEOUT * 2);
+				if (!strstr(errmsg, "query abort")) {
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL ERR: [%s] %s\n", select_sql, errmsg);
+				}
+				switch_core_db_free(errmsg);
+			}
+		}
+		break;
+	}
+
+	if (io_mutex) switch_mutex_unlock(io_mutex);
+
+	return status;
+}
+
+
+
 SWITCH_DECLARE(switch_status_t) switch_cache_db_execute_sql_callback(switch_cache_db_handle_t *dbh,
 																	 const char *sql, switch_core_db_callback_func_t callback, void *pdata, char **err)
 {

@@ -2633,6 +2633,19 @@ SWITCH_DECLARE(switch_status_t) switch_cache_db_execute_sql(switch_cache_db_hand
 SWITCH_DECLARE(switch_status_t) switch_cache_db_execute_sql_callback(switch_cache_db_handle_t *dbh, const char *sql,
 																	 switch_core_db_callback_func_t callback, void *pdata, char **err);
 
+
+/*!
+ \brief Executes the sql and uses callback for row-by-row processing
+ \param [in] dbh The handle
+ \param [in] update_sql - update sql to run
+ \param [in] select_sql - select sql to run 
+ \param [in] callback - function pointer to callback
+ \param [in] pdata - data to pass to callback
+ \param [out] err - Error if it exists
+*/
+SWITCH_DECLARE(switch_status_t) switch_cache_db_execute_update_select_single_sql_callback(switch_cache_db_handle_t *dbh, const char *update_sql, const char *select_sql,
+																	 switch_core_db_callback_func_t callback, void *pdata, char **err);
+
 /*!
  \brief Executes the sql and uses callback for row-by-row processing
  \param [in] dbh The handle

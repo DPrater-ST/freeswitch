@@ -839,6 +839,7 @@ static void do_dialog_probe(switch_event_t *event)
 	// Received SUBSCRIBE for "dialog" events.
 	// Return a complete list of dialogs for the monitored entity.
 	char *sql;
+	char *update_sql;
 	char *to = switch_event_get_header(event, "to");
 	char *probe_user = NULL, *probe_euser, *probe_host, *p;
 
@@ -920,13 +921,13 @@ static void do_dialog_probe(switch_event_t *event)
 		}
 
 
-		sql = switch_mprintf("update sip_subscriptions set version=version+1 where call_id='%q'", sub_call_id);
+		update_sql = switch_mprintf("update sip_subscriptions set version=version+1 where call_id='%q'", sub_call_id);
 
 		if (mod_sofia_globals.debug_presence > 1) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "%s DUMP DIALOG_PROBE set version sql:\n%s\n", profile->name, sql);
 		}
-		sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
-		switch_safe_free(sql);
+		//sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
+		//switch_safe_free(sql);
 
 
 		// The dialog_probe_callback has built up the dialogs to be included in the NOTIFY.
@@ -941,7 +942,8 @@ static void do_dialog_probe(switch_event_t *event)
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "%s DUMP DIALOG_PROBE subscription sql:\n%s\n", profile->name, sql);
 		}
 
-		sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_dialog_probe_notify_callback, h4235);
+		sofia_glue_execute_update_select_single_sql_callback(profile, profile->dbh_mutex, update_sql, sql, sofia_dialog_probe_notify_callback, h4235);
+		switch_safe_free(update_sql);
 		switch_safe_free(sql);
 
 		sofia_glue_release_profile(profile);
@@ -1116,6 +1118,7 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 	char *alt_event_type = switch_event_get_header(event, "alt_event_type");
 	//char *event_subtype = switch_event_get_header(event, "event_subtype");
 	char *sql = NULL;
+	char *update_sql = NULL;
 	char *euser = NULL, *user = NULL, *host = NULL;
 	char *call_info = switch_event_get_header(event, "presence-call-info");
 	char *call_id = switch_event_get_header(event, "call-id");
@@ -1175,8 +1178,8 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 
 			for (m = matches->head; m; m = m->next) {
 				if ((profile = sofia_glue_find_profile(m->val))) {
+					
 					if (profile->pres_type != PRES_TYPE_FULL) {
-
 
 						if (!mod_sofia_globals.profile_hash) {
 							switch_console_free_matches(&matches);
@@ -1186,7 +1189,7 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 
 						if (from) {
 
-							sql = switch_mprintf("update sip_subscriptions set version=version+1 where hostname='%q' and profile_name='%q' and "
+							update_sql = switch_mprintf("update sip_subscriptions set version=version+1 where hostname='%q' and profile_name='%q' and "
 												 "sip_subscriptions.event='presence' and sip_subscriptions.full_from like '%%%q%%'",
 												 mod_sofia_globals.hostname, profile->name, from);
 
@@ -1194,8 +1197,7 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 								switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "PRES SQL %s\n", sql);
 							}
 
-							sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
-
+							//sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
 
 							sql = switch_mprintf("select sip_subscriptions.proto,sip_subscriptions.sip_user,sip_subscriptions.sip_host,"
 												 "sip_subscriptions.sub_to_user,sip_subscriptions.sub_to_host,sip_subscriptions.event,"
@@ -1214,14 +1216,14 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 												 switch_str_nil(status), switch_str_nil(rpid), mod_sofia_globals.hostname, profile->name, from);
 						} else {
 
-							sql = switch_mprintf("update sip_subscriptions set version=version+1 where hostname='%q' and profile_name='%q' and "
+							update_sql = switch_mprintf("update sip_subscriptions set version=version+1 where hostname='%q' and profile_name='%q' and "
 												 "sip_subscriptions.event='presence'", mod_sofia_globals.hostname, profile->name);
 
 							if (mod_sofia_globals.debug_presence > 1) {
 								switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "PRES SQL %s\n", sql);
 							}
 
-							sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
+							//sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
 
 							sql = switch_mprintf("select sip_subscriptions.proto,sip_subscriptions.sip_user,sip_subscriptions.sip_host,"
 												 "sip_subscriptions.sub_to_user,sip_subscriptions.sub_to_host,sip_subscriptions.event,"
@@ -1249,10 +1251,11 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 						sofia_glue_release_profile(profile);
 						continue;
 					}
+
 					memset(&helper, 0, sizeof(helper));
 					helper.profile = profile;
 					helper.event = NULL;
-					sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_presence_sub_callback, &helper);
+					sofia_glue_execute_update_select_single_sql_callback(profile, profile->dbh_mutex, update_sql, sql, sofia_presence_sub_callback, &helper);
 					switch_safe_free(sql);
 					sofia_glue_release_profile(profile);
 				}
@@ -1458,7 +1461,7 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 
 				if (zstr(call_id)) {
 
-					sql = switch_mprintf("update sip_subscriptions set version=version+1 where hostname='%q' and profile_name='%q' and "
+					update_sql = switch_mprintf("update sip_subscriptions set version=version+1 where hostname='%q' and profile_name='%q' and "
 										 "sip_subscriptions.event != 'line-seize' "
 										 "and sip_subscriptions.proto='%q' and (event='%q' or event='%q') and sub_to_user='%q' and "
 										 "(sub_to_host='%q' or sub_to_host='%q' or sub_to_host='%q' or "
@@ -1473,16 +1476,16 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "PRES SQL %s\n", sql);
 					}
 
-					sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
+					//sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
+
+					
 					if(is_register == 0) {
 						if(alt_event_type && !strcmp(alt_event_type, "dialog")) {
 							//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Usleep Here ?????? alt_event_type %s, calling_file %s\n", alt_event_type, calling_file);
-							usleep( 50000 ); 
+							//usleep( 50000 ); 
 						}
 					}
-
-
-
+					
 					sql = switch_mprintf("select distinct sip_subscriptions.proto,sip_subscriptions.sip_user,sip_subscriptions.sip_host,"
 										 "sip_subscriptions.sub_to_user,sip_subscriptions.sub_to_host,sip_subscriptions.event,"
 										 "sip_subscriptions.contact,sip_subscriptions.call_id,sip_subscriptions.full_from,"
@@ -1509,16 +1512,14 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 										 profile->extsipip ? profile->extsipip : "N/A", host);
 				} else {
 
-					sql = switch_mprintf("update sip_subscriptions set version=version+1 where sip_subscriptions.event != 'line-seize' and "
+					update_sql = switch_mprintf("update sip_subscriptions set version=version+1 where sip_subscriptions.event != 'line-seize' and "
 										 "sip_subscriptions.call_id='%q'", call_id);
-
-
 
 					if (mod_sofia_globals.debug_presence > 1) {
 						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "PRES SQL %s\n", sql);
 					}
 
-					sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
+					//sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
 
 
 					sql = switch_mprintf("select distinct sip_subscriptions.proto,sip_subscriptions.sip_user,sip_subscriptions.sip_host,"
@@ -1567,7 +1568,7 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 					free(buf);
 				}
 
-				sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_presence_sub_callback, &helper);
+				sofia_glue_execute_update_select_single_sql_callback(profile, profile->dbh_mutex, update_sql, sql, sofia_presence_sub_callback, &helper);
 				switch_safe_free(sql);
 
 				if (mod_sofia_globals.debug_presence > 0) {
