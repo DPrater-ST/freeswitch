@@ -445,6 +445,7 @@ void sofia_presence_cancel(void)
 										 "event='presence' and hostname='%q' and profile_name='%q'",
 										 mod_sofia_globals.hostname, profile->name);
 
+					// this we are not using
 					r = sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_presence_sub_callback, &helper);
 					switch_safe_free(sql);
 
@@ -1105,6 +1106,24 @@ static void conference_data_event_handler(switch_event_t *event)
 	}
 
 	switch_safe_free(dup_domain);
+}
+
+// This is to dump the event 
+void dump_switch_event(switch_event_t *event) 
+{
+    char *event_str;
+
+    if (event) {
+        switch_event_serialize_json(event, &event_str);
+        if (event_str) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Event: %s\n", event_str);
+            free(event_str);
+        } else {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to serialize event\n");
+        }
+    } else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Event is NULL\n");
+    }
 }
 
 static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event)
