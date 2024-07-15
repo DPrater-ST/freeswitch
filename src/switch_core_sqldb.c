@@ -1362,18 +1362,27 @@ SWITCH_DECLARE(switch_status_t) switch_cache_db_execute_update_select_single_sql
 					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL ERR: [%s][%s] %s\n", update_sql, select_sql, errmsg);
 			}
 			else {
-				status = switch_odbc_handle_exec(dbh->native_handle.odbc_dbh, update_sql, NULL, &errmsg);
-				if(status != SWITCH_STATUS_SUCCESS) {
-					switch_odbc_SQLEndTran(dbh->native_handle.odbc_dbh, 0);
+
+				status = switch_odbc_handle_exec(dbh->native_handle.odbc_dbh, "START TRANSACTION", NULL, &errmsg);
+                if(status != SWITCH_STATUS_SUCCESS) {
 					*err = errmsg;
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL UPDATE ERR: [%s][%s] %s\n", update_sql, select_sql, errmsg);
-				} else {
-					status = switch_odbc_handle_callback_exec(dbh->native_handle.odbc_dbh, select_sql, callback, pdata, err);
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL START TRANSACTION ERR: [%s][%s] %s\n", update_sql, select_sql, errmsg);
+				}
+				else {
+
+					status = switch_odbc_handle_exec(dbh->native_handle.odbc_dbh, update_sql, NULL, &errmsg);
 					if(status != SWITCH_STATUS_SUCCESS) {
-						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL UPDATE ERR: [%s][%s] %s\n", update_sql, select_sql, errmsg);
 						switch_odbc_SQLEndTran(dbh->native_handle.odbc_dbh, 0);
+						*err = errmsg;
+						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL UPDATE ERR: [%s][%s] %s\n", update_sql, select_sql, errmsg);
 					} else {
-						switch_odbc_SQLEndTran(dbh->native_handle.odbc_dbh, 1);
+						status = switch_odbc_handle_callback_exec(dbh->native_handle.odbc_dbh, select_sql, callback, pdata, err);
+						if(status != SWITCH_STATUS_SUCCESS) {
+							switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL UPDATE ERR: [%s][%s] %s\n", update_sql, select_sql, errmsg);
+							switch_odbc_SQLEndTran(dbh->native_handle.odbc_dbh, 0);
+						} else {
+							switch_odbc_SQLEndTran(dbh->native_handle.odbc_dbh, 1);
+						}
 					}
 				}
 				switch_odbc_SQLSetAutoCommitAttr(dbh->native_handle.odbc_dbh, 1);
