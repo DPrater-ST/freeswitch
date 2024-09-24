@@ -925,7 +925,7 @@ static void do_dialog_probe(switch_event_t *event)
 		update_sql = switch_mprintf("update sip_subscriptions set version=version+1 where call_id='%q'", sub_call_id);
 
 		if (mod_sofia_globals.debug_presence > 1) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "%s DUMP DIALOG_PROBE set version sql:\n%s\n", profile->name, sql);
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "%s DUMP DIALOG_PROBE set version sql:\n%s\n", profile->name ? profile->name : "(null)",  sql ? sql : "(null)");
 		}
 		//sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
 		//switch_safe_free(sql);

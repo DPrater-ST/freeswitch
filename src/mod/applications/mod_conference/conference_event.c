@@ -108,11 +108,13 @@ void conference_event_mod_channel_handler(const char *event_channel, cJSON *json
 		}
 	}
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "conf %s CMD %s [%s] %s\n", conference_name, key, action, cid);
 
 	if (zstr(action)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "conf %s CMD %s [NULL] %s\n", conference_name, key, cid);
 		goto end;
 	}
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "conf %s CMD %s [%s] %s\n", conference_name, key, action, cid);
 
 	SWITCH_STANDARD_STREAM(stream);
 
