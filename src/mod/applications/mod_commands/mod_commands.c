@@ -7828,7 +7828,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_commands_load)
 	switch_console_set_complete("add uuid_phone_event ::console::list_uuid talk");
 	switch_console_set_complete("add uuid_phone_event ::console::list_uuid hold");
 	switch_console_set_complete("add uuid_preprocess ::console::list_uuid");
-	switch_console_set_complete("add uuid_record ::console::list_uuid ::[start:stop");
+	switch_console_set_complete("add uuid_record ::console::list_uuid ::[start:stop:mask:unmask");
 	switch_console_set_complete("add uuid_recovery_refresh ::console::list_uuid");
 	switch_console_set_complete("add uuid_recv_dtmf ::console::list_uuid");
 	switch_console_set_complete("add uuid_redirect ::console::list_uuid");
