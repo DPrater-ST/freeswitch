@@ -9691,8 +9691,10 @@ void sofia_handle_sip_i_refer(nua_t *nua, sofia_profile_t *profile, nua_handle_t
 							}
 
                                                 }
-
-                                                switch_core_session_rwunlock(a_session);
+												// Here unable to locate br_a call_id. In this case a_session is NULL. We need to findout why the session is not found
+												if(a_session != NULL) {
+                                                	switch_core_session_rwunlock(a_session);
+												}
                                                 goto done;
                                         }
 
