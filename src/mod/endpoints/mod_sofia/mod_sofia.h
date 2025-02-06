@@ -384,6 +384,8 @@ struct mod_sofia_globals {
 	char guess_ip[80];
 	char hostname[512];
 	switch_queue_t *presence_queue;
+	switch_queue_t *mwi_queue;
+	switch_queue_t *reg_blf_notify_queue;
 	switch_queue_t *msg_queue;
 	switch_queue_t *general_event_queue;
 	switch_thread_t *msg_queue_thread[SOFIA_MAX_MSG_QUEUE];
@@ -401,7 +403,11 @@ struct mod_sofia_globals {
 	char *capture_server;
 	int rewrite_multicasted_fs_path;
 	int presence_flush;
+	int mwi_flush;
+	int reg_blf_notify_flush;
 	switch_thread_t *presence_thread;
+	switch_thread_t *mwi_thread;
+	switch_thread_t *reg_blf_notify_thread;
 	uint32_t max_reg_threads;
 	time_t presence_epoch;
 	int presence_year;
@@ -1075,6 +1081,11 @@ char *sofia_overcome_sip_uri_weakness(switch_core_session_t *session, const char
 									  const char *params, const char *invite_tel_params);
 switch_bool_t sofia_glue_execute_sql_callback(sofia_profile_t *profile, switch_mutex_t *mutex, char *sql, switch_core_db_callback_func_t callback,
 											  void *pdata);
+
+
+switch_bool_t sofia_glue_execute_update_select_single_sql_callback(sofia_profile_t *profile, switch_mutex_t *mutex, char *update_sql, char *select_sql, switch_core_db_callback_func_t callback,
+											  void *pdata);
+
 char *sofia_glue_execute_sql2str(sofia_profile_t *profile, switch_mutex_t *mutex, char *sql, char *resbuf, size_t len);
 void sofia_glue_del_profile(sofia_profile_t *profile);
 
@@ -1258,6 +1269,7 @@ void sofia_reg_close_handles(sofia_profile_t *profile);
 
 void write_csta_xml_chunk(switch_event_t *event, switch_stream_handle_t stream, const char *csta_event, char *fwd_type);
 void sofia_glue_clear_soa(switch_core_session_t *session, switch_bool_t partner);
+void dump_switch_event(switch_event_t *event);
 
 /* For Emacs:
  * Local Variables:

@@ -4611,6 +4611,22 @@ SWITCH_STANDARD_API(sofia_function)
 
 		goto done;
 	}
+	else if (!strcasecmp(argv[0], "mwi_queue")) {
+		stream->write_function(stream, "MWI Queue %d", switch_queue_size(mod_sofia_globals.mwi_queue));
+		goto done;
+	} 
+	else if (!strcasecmp(argv[0], "reg_blf_notify_queue")) {
+		stream->write_function(stream, "Reg BLF Notify Queue %d", switch_queue_size(mod_sofia_globals.reg_blf_notify_queue));
+		goto done;
+	} 
+	else if (!strcasecmp(argv[0], "presence_queue")) {
+		stream->write_function(stream, "Presence Queue %d", switch_queue_size(mod_sofia_globals.presence_queue));
+		goto done;
+	} 
+	else if (!strcasecmp(argv[0], "queues")) {
+		stream->write_function(stream, "MWI Queue %d,Reg BLF Notify Queue %d,Presence Queue %d", switch_queue_size(mod_sofia_globals.mwi_queue), switch_queue_size(mod_sofia_globals.reg_blf_notify_queue), switch_queue_size(mod_sofia_globals.presence_queue));
+		goto done;
+	} 
 
 	if (func) {
 		status = func(&argv[lead], argc - lead, stream);
@@ -6318,6 +6334,8 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_sofia_load)
 
 	mod_sofia_globals.auto_nat = (switch_nat_get_type() ? 1 : 0);
 
+	switch_queue_create(&mod_sofia_globals.mwi_queue, SOFIA_QUEUE_SIZE, mod_sofia_globals.pool);
+	switch_queue_create(&mod_sofia_globals.reg_blf_notify_queue, SOFIA_QUEUE_SIZE, mod_sofia_globals.pool);
 	switch_queue_create(&mod_sofia_globals.presence_queue, SOFIA_QUEUE_SIZE, mod_sofia_globals.pool);
 	switch_queue_create(&mod_sofia_globals.general_event_queue, SOFIA_QUEUE_SIZE, mod_sofia_globals.pool);
 
@@ -6487,6 +6505,11 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_sofia_load)
 	SWITCH_ADD_API(api_interface, "sofia_dig", "SIP DIG", sip_dig_function, "<url>");
 	SWITCH_ADD_API(api_interface, "sofia_presence_data", "Sofia Presence Data", sofia_presence_data_function, "[list|status|rpid|user_agent] [profile/]<user>@domain");
 	SWITCH_ADD_CHAT(chat_interface, SOFIA_CHAT_PROTO, sofia_presence_chat_send);
+
+	switch_console_set_complete("add sofia mwi_queue");
+	switch_console_set_complete("add sofia reg_blf_notify_queue");
+	switch_console_set_complete("add sofia presence_queue");
+	switch_console_set_complete("add sofia queues");
 
 	crtp_init(*module_interface);
 

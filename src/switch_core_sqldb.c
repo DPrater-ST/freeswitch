@@ -1325,6 +1325,98 @@ SWITCH_DECLARE(switch_status_t) switch_cache_db_execute_sql_event_callback_err(s
 	return status;
 }
 
+
+SWITCH_DECLARE(switch_status_t) switch_cache_db_execute_update_select_single_sql_callback(switch_cache_db_handle_t *dbh,
+																	 const char *update_sql, const char *select_sql, switch_core_db_callback_func_t callback, void *pdata, char **err)
+{
+	switch_status_t status = SWITCH_STATUS_FALSE;
+	char *errmsg = NULL;
+	switch_mutex_t *io_mutex = dbh->io_mutex;
+
+	if (err) {
+		*err = NULL;
+	}
+
+	if (io_mutex) switch_mutex_lock(io_mutex);
+
+
+	switch (dbh->type) {
+		case SCDB_TYPE_DATABASE_INTERFACE:
+		{
+			switch_database_interface_t *database_interface = dbh->native_handle.database_interface_dbh->connection_options.database_interface;
+
+			if ((status = database_interface_handle_callback_exec(database_interface, dbh->native_handle.database_interface_dbh, select_sql, callback, pdata, err)) != SWITCH_STATUS_SUCCESS) {
+				char tmp[100];
+				switch_snprintfv(tmp, sizeof(tmp), "%q-%i", "Unable to execute_sql_callback", status);
+			}
+		}
+		break;
+	case SCDB_TYPE_ODBC:
+		{
+			switch_odbc_status_t result;
+			if ((result = switch_odbc_SQLSetAutoCommitAttr(dbh->native_handle.odbc_dbh, 0)) != SWITCH_ODBC_SUCCESS) {
+					char tmp[100];
+					switch_snprintfv(tmp, sizeof(tmp), "%q-%i", "Unable to Set AutoCommit Off", result);
+					errmsg = strdup(tmp);
+					status = SWITCH_STATUS_FALSE;
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL ERR: [%s][%s] %s\n", update_sql, select_sql, errmsg);
+			}
+			else {
+
+				status = switch_odbc_handle_exec(dbh->native_handle.odbc_dbh, "START TRANSACTION", NULL, &errmsg);
+                if(status != SWITCH_STATUS_SUCCESS) {
+					*err = errmsg;
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL START TRANSACTION ERR: [%s][%s] %s\n", update_sql, select_sql, errmsg);
+				}
+				else {
+
+					status = switch_odbc_handle_exec(dbh->native_handle.odbc_dbh, update_sql, NULL, &errmsg);
+					if(status != SWITCH_STATUS_SUCCESS) {
+						switch_odbc_SQLEndTran(dbh->native_handle.odbc_dbh, 0);
+						*err = errmsg;
+						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL UPDATE ERR: [%s][%s] %s\n", update_sql, select_sql, errmsg);
+					} else {
+						status = switch_odbc_handle_callback_exec(dbh->native_handle.odbc_dbh, select_sql, callback, pdata, err);
+						if(status != SWITCH_STATUS_SUCCESS) {
+							switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL UPDATE ERR: [%s][%s] %s\n", update_sql, select_sql, errmsg);
+							switch_odbc_SQLEndTran(dbh->native_handle.odbc_dbh, 0);
+						} else {
+							switch_odbc_SQLEndTran(dbh->native_handle.odbc_dbh, 1);
+						}
+					}
+				}
+				switch_odbc_SQLSetAutoCommitAttr(dbh->native_handle.odbc_dbh, 1);
+				//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL UPDATE SELECT DONE status [%d] [%s][%s] %s\n", status, update_sql, select_sql, errmsg);
+			}
+		}
+		break;
+	case SCDB_TYPE_CORE_DB:
+		{
+			
+			int ret = switch_core_db_exec(dbh->native_handle.core_db_dbh->handle, select_sql, callback, pdata, &errmsg);
+
+			if (ret == SWITCH_CORE_DB_OK || ret == SWITCH_CORE_DB_ABORT) {
+				status = SWITCH_STATUS_SUCCESS;
+			}
+
+			if (errmsg) {
+				dbh->last_used = switch_epoch_time_now(NULL) - (SQL_CACHE_TIMEOUT * 2);
+				if (!strstr(errmsg, "query abort")) {
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL ERR: [%s] %s\n", select_sql, errmsg);
+				}
+				switch_core_db_free(errmsg);
+			}
+		}
+		break;
+	}
+
+	if (io_mutex) switch_mutex_unlock(io_mutex);
+
+	return status;
+}
+
+
+
 SWITCH_DECLARE(switch_status_t) switch_cache_db_execute_sql_callback(switch_cache_db_handle_t *dbh,
 																	 const char *sql, switch_core_db_callback_func_t callback, void *pdata, char **err)
 {
@@ -2419,6 +2511,51 @@ static char *parse_presence_data_cols(switch_event_t *event)
 #define new_sql()   switch_assert(sql_idx+1 < MAX_SQL); if (exists) sql[sql_idx++]
 #define new_sql_a() switch_assert(sql_idx+1 < MAX_SQL); sql[sql_idx++]
 
+SWITCH_DECLARE(char *) switch_core_get_localip(void)
+{
+	FILE *fp;
+	static char *localip = NULL;
+	int length = 1024;
+	char *pos;
+
+
+	if(localip == NULL) {
+			localip = (char *)malloc(length);
+	}
+	else {
+		if(strlen(localip) != 0) {
+			return localip;
+		}
+	}
+
+
+	fp = popen("hostname -I", "r");
+	if (fp == NULL) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Not able to fetch the local ip serious issue command didn't work try run [hostname -I] command in the console\n");
+			localip = (char *)switch_core_get_hostname(); 
+			return (char *)switch_core_get_hostname();
+	}
+
+	while (fgets(localip, length - 1, fp) != NULL) {
+		if ((pos=strchr(localip, '\n')) != NULL) {
+			*pos = '\0';
+		}
+
+		if ((pos=strchr(localip, ' ')) != NULL) {
+			*pos = '\0';
+		}
+
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "switch_core_get_localip %s\n", localip);
+
+	    return localip;
+	}
+
+
+	return (char *)switch_core_get_hostname();
+}
+
+
+
 static void core_event_handler(switch_event_t *event)
 {
 	char *sql[MAX_SQL] = { 0 };
@@ -2426,12 +2563,15 @@ static void core_event_handler(switch_event_t *event)
 	char *extra_cols;
 	int exists = 1;
 	char *uuid = NULL;
+	const char *time;
 
 	switch_assert(event);
+
 
 	switch (event->event_id) {
 	case SWITCH_EVENT_CHANNEL_UUID:
 	case SWITCH_EVENT_CHANNEL_CREATE:
+	case SWITCH_EVENT_CHANNEL_CREATE_ON_RETRY:
 	case SWITCH_EVENT_CHANNEL_ANSWER:
 	case SWITCH_EVENT_CHANNEL_PROGRESS_MEDIA:
 	case SWITCH_EVENT_CHANNEL_HOLD:
@@ -2442,6 +2582,7 @@ static void core_event_handler(switch_event_t *event)
 	case SWITCH_EVENT_CHANNEL_CALLSTATE:
 	case SWITCH_EVENT_CHANNEL_STATE:
 	case SWITCH_EVENT_CHANNEL_BRIDGE:
+	case SWITCH_EVENT_CHANNEL_BRIDGE_ON_RETRY:
 	case SWITCH_EVENT_CHANNEL_UNBRIDGE:
 	case SWITCH_EVENT_CALL_SECURE:
 		{
@@ -2511,6 +2652,20 @@ static void core_event_handler(switch_event_t *event)
 		break;
 	case SWITCH_EVENT_CHANNEL_UUID:
 		{
+	
+			uuid = switch_event_get_header_nil(event, "unique-id");
+			if(uuid != NULL) {
+				switch_core_session_t * session = switch_core_session_locate(uuid);
+				if(session != NULL) {
+						switch_channel_t *channel = switch_core_session_get_channel(session);
+						if(channel != NULL) {
+							switch_channel_set_variable(channel, "my-call_uuid", switch_event_get_header_nil(event, "unique-id"));
+						}
+						switch_core_session_rwunlock(session);
+				}
+
+			}
+
 			new_sql() = switch_mprintf("update channels set uuid='%q' where uuid='%q'",
 									   switch_event_get_header_nil(event, "unique-id"),
 									   switch_event_get_header_nil(event, "old-unique-id")
@@ -2522,9 +2677,14 @@ static void core_event_handler(switch_event_t *event)
 									   );
 			break;
 		}
-	case SWITCH_EVENT_CHANNEL_CREATE:
-		new_sql() = switch_mprintf("insert into channels (uuid,direction,created,created_epoch, name,state,callstate,dialplan,context,hostname,initial_cid_name,initial_cid_num,initial_ip_addr,initial_dest,initial_dialplan,initial_context) "
-								   "values('%q','%q','%q','%ld','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q')",
+
+	case SWITCH_EVENT_CHANNEL_CREATE_ON_RETRY:
+		
+		time = switch_event_get_header(event, "CHANNEL_CREATE_TIME");
+
+		if(time == NULL) {
+			new_sql() = switch_mprintf("insert into channels (uuid,direction,created,created_epoch, name,state,callstate,dialplan,context,hostname,initial_cid_name,initial_cid_num,initial_ip_addr,initial_dest,initial_dialplan,initial_context, local_hostname) "
+								   "values('%q','%q','%q','%ld','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q', '%q')",
 								   switch_event_get_header_nil(event, "unique-id"),
 								   switch_event_get_header_nil(event, "call-direction"),
 								   switch_event_get_header_nil(event, "event-date-local"),
@@ -2539,7 +2699,128 @@ static void core_event_handler(switch_event_t *event)
 								   switch_event_get_header_nil(event, "caller-network-addr"),
 								   switch_event_get_header_nil(event, "caller-destination-number"),
 								   switch_event_get_header_nil(event, "caller-dialplan"),
-								   switch_event_get_header_nil(event, "caller-context")
+								   switch_event_get_header_nil(event, "caller-context"),
+								   switch_core_get_localip()
+								   );
+		}
+		else {
+
+			new_sql() = switch_mprintf("insert into channels (uuid,direction,created,created_epoch, name,state,callstate,dialplan,context,hostname,initial_cid_name,initial_cid_num,initial_ip_addr,initial_dest,initial_dialplan,initial_context, local_hostname) "
+								   "values('%q','%q',from_unixtime('%q'),'%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q', '%q')",
+								   switch_event_get_header_nil(event, "unique-id"),
+								   switch_event_get_header_nil(event, "call-direction"),
+								   time,
+								   time,
+								   switch_event_get_header_nil(event, "channel-name"),
+								   switch_event_get_header_nil(event, "channel-state"),
+								   switch_event_get_header_nil(event, "channel-call-state"),
+								   switch_event_get_header_nil(event, "caller-dialplan"),
+								   switch_event_get_header_nil(event, "caller-context"), switch_core_get_switchname(),
+								   switch_event_get_header_nil(event, "caller-caller-id-name"),
+								   switch_event_get_header_nil(event, "caller-caller-id-number"),
+								   switch_event_get_header_nil(event, "caller-network-addr"),
+								   switch_event_get_header_nil(event, "caller-destination-number"),
+								   switch_event_get_header_nil(event, "caller-dialplan"),
+								   switch_event_get_header_nil(event, "caller-context"),
+								   switch_core_get_localip()
+								   );
+
+		}
+
+		if ((extra_cols = parse_presence_data_cols(event))) {
+					new_sql() = switch_mprintf("update channels set state='%q',cid_name='%q',cid_num='%q',callee_name='%q',callee_num='%q',"
+											   "sent_callee_name='%q',sent_callee_num='%q',"
+											   "ip_addr='%q',dest='%q',dialplan='%q',context='%q',presence_id='%q',presence_data='%q',accountcode='%q',%s "
+											   "where uuid='%q'",
+											   switch_event_get_header_nil(event, "channel-state"),
+											   switch_event_get_header_nil(event, "caller-caller-id-name"),
+											   switch_event_get_header_nil(event, "caller-caller-id-number"),
+											   switch_event_get_header_nil(event, "caller-callee-id-name"),
+											   switch_event_get_header_nil(event, "caller-callee-id-number"),
+											   switch_event_get_header_nil(event, "my-sent-callee-id-name"),
+											   switch_event_get_header_nil(event, "my-sent-callee-id-number"),
+											   switch_event_get_header_nil(event, "caller-network-addr"),
+											   switch_event_get_header_nil(event, "caller-destination-number"),
+											   switch_event_get_header_nil(event, "caller-dialplan"),
+											   switch_event_get_header_nil(event, "caller-context"),
+											   switch_event_get_header_nil(event, "channel-presence-id"),
+											   switch_event_get_header_nil(event, "channel-presence-data"),
+											   switch_event_get_header_nil(event, "variable_accountcode"),
+											   extra_cols,
+											   switch_event_get_header_nil(event, "unique-id"));
+					free(extra_cols);
+				} else {
+					new_sql() = switch_mprintf("update channels set state='%q',cid_name='%q',cid_num='%q',callee_name='%q',callee_num='%q',"
+											   "sent_callee_name='%q',sent_callee_num='%q',"
+											   "ip_addr='%q',dest='%q',dialplan='%q',context='%q',presence_id='%q',presence_data='%q',accountcode='%q' "
+											   "where uuid='%q'",
+											   switch_event_get_header_nil(event, "channel-state"),
+											   switch_event_get_header_nil(event, "caller-caller-id-name"),
+											   switch_event_get_header_nil(event, "caller-caller-id-number"),
+											   switch_event_get_header_nil(event, "caller-callee-id-name"),
+											   switch_event_get_header_nil(event, "caller-callee-id-number"),
+											   switch_event_get_header_nil(event, "my-sent-callee-id-name"),
+											   switch_event_get_header_nil(event, "my-sent-callee-id-number"),
+											   switch_event_get_header_nil(event, "caller-network-addr"),
+											   switch_event_get_header_nil(event, "caller-destination-number"),
+											   switch_event_get_header_nil(event, "caller-dialplan"),
+											   switch_event_get_header_nil(event, "caller-context"),
+											   switch_event_get_header_nil(event, "channel-presence-id"),
+											   switch_event_get_header_nil(event, "channel-presence-data"),
+											   switch_event_get_header_nil(event, "variable_accountcode"),
+											   switch_event_get_header_nil(event, "unique-id"));
+				}
+
+			new_sql() = switch_mprintf("update channels set callee_name='%q',callee_num='%q',sent_callee_name='%q',sent_callee_num='%q',callee_direction='%q',"
+									   "cid_name='%q',cid_num='%q' where uuid='%q'",
+									   switch_event_get_header_nil(event, "caller-callee-id-name"),
+									   switch_event_get_header_nil(event, "caller-callee-id-number"),
+									   switch_event_get_header_nil(event, "my-sent-callee-id-name"),
+									   switch_event_get_header_nil(event, "my-sent-callee-id-number"),
+									   switch_event_get_header_nil(event, "my-direction"),
+									   switch_event_get_header_nil(event, "caller-caller-id-name"),
+									   switch_event_get_header_nil(event, "caller-caller-id-number"),
+									   switch_event_get_header_nil(event, "unique-id")
+									   );
+
+		new_sql() = switch_mprintf("update channels set application='%q',application_data='%q',"
+								   "presence_id='%q',presence_data='%q',accountcode='%q', call_uuid='%q'  where uuid='%q'",
+								   switch_event_get_header_nil(event, "my-application"),
+								   switch_event_get_header_nil(event, "my-application-data"),
+								   switch_event_get_header_nil(event, "channel-presence-id"),
+								   switch_event_get_header_nil(event, "channel-presence-data"),
+								   switch_event_get_header_nil(event, "variable_accountcode"),
+								   switch_event_get_header_nil(event, "my-call_uuid"),
+								   switch_event_get_header_nil(event, "unique-id")
+								   );
+
+//		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Updating here unique-id %s, call_uuid %s\n", switch_event_get_header_nil(event, "unique-id"), switch_event_get_header_nil(event, "my-call_uuid"));
+
+//		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "my appliocation data %s %s\n", switch_event_get_header_nil(event, "my-application"), switch_event_get_header_nil(event, "my-application-data"));
+
+
+
+		break;
+
+	case SWITCH_EVENT_CHANNEL_CREATE:
+		new_sql() = switch_mprintf("insert into channels (uuid,direction,created,created_epoch, name,state,callstate,dialplan,context,hostname,initial_cid_name,initial_cid_num,initial_ip_addr,initial_dest,initial_dialplan,initial_context, local_hostname) "
+								   "values('%q','%q','%q','%ld','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q','%q', '%q')",
+								   switch_event_get_header_nil(event, "unique-id"),
+								   switch_event_get_header_nil(event, "call-direction"),
+								   switch_event_get_header_nil(event, "event-date-local"),
+								   (long) switch_epoch_time_now(NULL),
+								   switch_event_get_header_nil(event, "channel-name"),
+								   switch_event_get_header_nil(event, "channel-state"),
+								   switch_event_get_header_nil(event, "channel-call-state"),
+								   switch_event_get_header_nil(event, "caller-dialplan"),
+								   switch_event_get_header_nil(event, "caller-context"), switch_core_get_switchname(),
+								   switch_event_get_header_nil(event, "caller-caller-id-name"),
+								   switch_event_get_header_nil(event, "caller-caller-id-number"),
+								   switch_event_get_header_nil(event, "caller-network-addr"),
+								   switch_event_get_header_nil(event, "caller-destination-number"),
+								   switch_event_get_header_nil(event, "caller-dialplan"),
+								   switch_event_get_header_nil(event, "caller-context"),
+								   switch_core_get_localip()
 								   );
 		break;
 	case SWITCH_EVENT_CHANNEL_ANSWER:
@@ -2560,6 +2841,20 @@ static void core_event_handler(switch_event_t *event)
 	case SWITCH_EVENT_CHANNEL_UNHOLD:
 	case SWITCH_EVENT_CHANNEL_EXECUTE: {
 
+		uuid = switch_event_get_header_nil(event, "unique-id");
+		if(uuid != NULL) {
+				switch_core_session_t * session = switch_core_session_locate(uuid);
+				if(session != NULL) {
+						switch_channel_t *channel = switch_core_session_get_channel(session);
+						if(channel != NULL) {
+							switch_channel_set_variable(channel, "my-application", switch_event_get_header_nil(event, "application"));
+							switch_channel_set_variable(channel, "my-application-data", switch_event_get_header_nil(event, "application-data"));
+						}
+						switch_core_session_rwunlock(session);
+				}
+
+		}
+
 		new_sql() = switch_mprintf("update channels set application='%q',application_data='%q',"
 								   "presence_id='%q',presence_data='%q',accountcode='%q' where uuid='%q'",
 								   switch_event_get_header_nil(event, "application"),
@@ -2570,11 +2865,29 @@ static void core_event_handler(switch_event_t *event)
 								   switch_event_get_header_nil(event, "unique-id")
 								   );
 
+
+		
+
+
 	}
 		break;
 
 	case SWITCH_EVENT_CHANNEL_ORIGINATE:
 		{
+
+			uuid = switch_event_get_header_nil(event, "unique-id");
+			if(uuid != NULL) {
+				switch_core_session_t * session = switch_core_session_locate(uuid);
+				if(session != NULL) {
+						switch_channel_t *channel = switch_core_session_get_channel(session);
+						if(channel != NULL) {
+							switch_channel_set_variable(channel, "my-call_uuid", switch_event_get_header_nil(event, "channel-call-uuid"));
+						}
+						switch_core_session_rwunlock(session);
+				}
+
+			}
+
 			if ((extra_cols = parse_presence_data_cols(event))) {
 				new_sql() = switch_mprintf("update channels set "
 										   "presence_id='%q',presence_data='%q',accountcode='%q',call_uuid='%q',%s where uuid='%q'",
@@ -2600,6 +2913,22 @@ static void core_event_handler(switch_event_t *event)
 		break;
 	case SWITCH_EVENT_CALL_UPDATE:
 		{
+
+			uuid = switch_event_get_header_nil(event, "unique-id");
+			if(uuid != NULL) {
+				switch_core_session_t * session = switch_core_session_locate(uuid);
+				if(session != NULL) {
+						switch_channel_t *channel = switch_core_session_get_channel(session);
+						if(channel != NULL) {
+							switch_channel_set_variable(channel, "my-direction", switch_event_get_header_nil(event, "direction"));
+							switch_channel_set_variable(channel, "my-sent-callee-id-name", switch_event_get_header_nil(event, "sent-callee-id-name"));
+							switch_channel_set_variable(channel, "my-sent-callee-id-number", switch_event_get_header_nil(event, "sent-callee-id-number"));
+						}
+						switch_core_session_rwunlock(session);
+				}
+
+			}
+
 			new_sql() = switch_mprintf("update channels set callee_name='%q',callee_num='%q',sent_callee_name='%q',sent_callee_num='%q',callee_direction='%q',"
 									   "cid_name='%q',cid_num='%q' where uuid='%q'",
 									   switch_event_get_header_nil(event, "caller-callee-id-name"),
@@ -2678,6 +3007,23 @@ static void core_event_handler(switch_event_t *event)
 				}
 				break;
 			case CS_ROUTING:
+
+				uuid = switch_event_get_header_nil(event, "unique-id");
+				if(uuid != NULL) {
+					switch_core_session_t * session = switch_core_session_locate(uuid);
+					if(session != NULL) {
+							switch_channel_t *channel = switch_core_session_get_channel(session);
+							if(channel != NULL) {
+								switch_channel_set_variable(channel, "my-direction", switch_event_get_header_nil(event, "direction"));
+								switch_channel_set_variable(channel, "my-sent-callee-id-name", switch_event_get_header_nil(event, "sent-callee-id-name"));
+								switch_channel_set_variable(channel, "my-sent-callee-id-number", switch_event_get_header_nil(event, "sent-callee-id-number"));
+							}
+							switch_core_session_rwunlock(session);
+					}
+
+				}
+
+
 				if ((extra_cols = parse_presence_data_cols(event))) {
 					new_sql() = switch_mprintf("update channels set state='%q',cid_name='%q',cid_num='%q',callee_name='%q',callee_num='%q',"
 											   "sent_callee_name='%q',sent_callee_num='%q',"
@@ -2733,6 +3079,53 @@ static void core_event_handler(switch_event_t *event)
 
 
 		}
+
+	case SWITCH_EVENT_CHANNEL_BRIDGE_ON_RETRY:
+		{
+			const char *a_uuid, *b_uuid;
+
+			a_uuid = switch_event_get_header(event, "Bridge-A-Unique-ID");
+			b_uuid = switch_event_get_header(event, "Bridge-B-Unique-ID");
+			time = switch_event_get_header(event, "CHANNEL_BRIDGE_TIME");
+
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Came here insertting on retry time %s\n", time);
+
+			if (zstr(a_uuid) || zstr(b_uuid)) {
+				a_uuid = switch_event_get_header_nil(event, "caller-unique-id");
+				b_uuid = switch_event_get_header_nil(event, "other-leg-unique-id");
+			}
+
+
+			if(time == NULL) {
+				new_sql() = switch_mprintf("insert into calls (call_uuid,call_created,call_created_epoch,"
+										   "caller_uuid,callee_uuid,hostname, local_hostname) "
+										   "values ('%q','%q','%ld','%q','%q','%q', '%q')",
+										   switch_event_get_header_nil(event, "channel-call-uuid"),
+										   switch_event_get_header_nil(event, "event-date-local"),
+										   (long) switch_epoch_time_now(NULL),
+										   a_uuid,
+										   b_uuid,
+										   switch_core_get_switchname(),
+										   switch_core_get_localip()
+									   );
+			} else {
+
+				new_sql() = switch_mprintf("insert into calls (call_uuid,call_created,call_created_epoch,"
+										   "caller_uuid,callee_uuid,hostname, local_hostname) "
+										   "values ('%q',from_unixtime('%q'),'%q','%q','%q','%q', '%q')",
+										   switch_event_get_header_nil(event, "channel-call-uuid"),
+										   time,
+										   time,
+										   a_uuid,
+										   b_uuid,
+										   switch_core_get_switchname(),
+										   switch_core_get_localip()
+									   );
+
+			}
+		}
+		break;
+
 	case SWITCH_EVENT_CHANNEL_BRIDGE:
 		{
 			const char *a_uuid, *b_uuid, *uuid;
@@ -2740,6 +3133,17 @@ static void core_event_handler(switch_event_t *event)
 			a_uuid = switch_event_get_header(event, "Bridge-A-Unique-ID");
 			b_uuid = switch_event_get_header(event, "Bridge-B-Unique-ID");
 			uuid = switch_event_get_header(event, "unique-id");
+			if(uuid != NULL) {
+				switch_core_session_t * session = switch_core_session_locate(uuid);
+				if(session != NULL) {
+						switch_channel_t *channel = switch_core_session_get_channel(session);
+						if(channel != NULL) {
+							switch_channel_set_variable(channel, "my-call_uuid", switch_event_get_header_nil(event, "channel-call-uuid"));
+						}
+						switch_core_session_rwunlock(session);
+				}
+
+			}
 
 			if (zstr(a_uuid) || zstr(b_uuid)) {
 				a_uuid = switch_event_get_header_nil(event, "caller-unique-id");
@@ -2756,14 +3160,15 @@ static void core_event_handler(switch_event_t *event)
 
 
 			new_sql() = switch_mprintf("insert into calls (call_uuid,call_created,call_created_epoch,"
-									   "caller_uuid,callee_uuid,hostname) "
-									   "values ('%q','%q','%ld','%q','%q','%q')",
+									   "caller_uuid,callee_uuid,hostname, local_hostname) "
+									   "values ('%q','%q','%ld','%q','%q','%q', '%q')",
 									   switch_event_get_header_nil(event, "channel-call-uuid"),
 									   switch_event_get_header_nil(event, "event-date-local"),
 									   (long) switch_epoch_time_now(NULL),
 									   a_uuid,
 									   b_uuid,
-									   switch_core_get_switchname()
+									   switch_core_get_switchname(),
+									   switch_core_get_localip()
 									   );
 		}
 		break;
@@ -2771,6 +3176,18 @@ static void core_event_handler(switch_event_t *event)
 		{
 			char *cuuid = switch_event_get_header_nil(event, "caller-unique-id");
 			char *uuid = switch_event_get_header(event, "unique-id");
+			if(uuid != NULL) {
+				switch_core_session_t * session = switch_core_session_locate(uuid);
+				if(session != NULL) {
+						switch_channel_t *channel = switch_core_session_get_channel(session);
+						if(channel != NULL) {
+							switch_channel_set_variable(channel, "my-call_uuid", switch_event_get_header_nil(event, "channel-call-uuid"));
+						}
+						switch_core_session_rwunlock(session);
+				}
+
+			}
+
 
 			if (uuid && (extra_cols = parse_presence_data_cols(event))) {
 				new_sql() = switch_mprintf("update channels set %s where uuid='%q'", extra_cols, uuid);
@@ -2922,7 +3339,7 @@ static char create_channels_sql[] =
 	"   write_rate  VARCHAR(32),\n"
 	"   write_bit_rate  VARCHAR(32),\n"
 	"   secure VARCHAR(64),\n"
-	"   hostname VARCHAR(256),\n"
+	"   local_hostname VARCHAR(256),\n"
 	"   presence_id VARCHAR(4096),\n"
 	"   presence_data VARCHAR(4096),\n"
 	"   accountcode VARCHAR(256),\n"
@@ -2938,7 +3355,8 @@ static char create_channels_sql[] =
 	"   initial_ip_addr  VARCHAR(256),\n"
 	"   initial_dest  VARCHAR(1024),\n"
 	"   initial_dialplan  VARCHAR(128),\n"
-	"   initial_context  VARCHAR(128)\n"
+	"   initial_context  VARCHAR(128),\n"
+	"   local_hostname VARCHAR(256)\n"
 	");\n";
 
 static char create_row_size_limited_channels_sql[] =
@@ -2980,7 +3398,8 @@ static char create_row_size_limited_channels_sql[] =
 	"   initial_ip_addr  VARCHAR(256),\n"
 	"   initial_dest  VARCHAR(1024),\n"
 	"   initial_dialplan  VARCHAR(128),\n"
-	"   initial_context  VARCHAR(128)\n"
+	"   initial_context  VARCHAR(128),\n"
+	"   local_hostname VARCHAR(256)\n"
 ");\n";
 
 static char create_calls_sql[] =
@@ -2990,6 +3409,7 @@ static char create_calls_sql[] =
 	"   call_created_epoch  INTEGER,\n"
 	"   caller_uuid      VARCHAR(256),\n"
 	"   callee_uuid      VARCHAR(256),\n"
+	"   hostname VARCHAR(256),\n"
 	"   hostname VARCHAR(256)\n"
 	");\n";
 
@@ -3872,6 +4292,7 @@ switch_status_t switch_core_sqldb_start(switch_memory_pool_t *pool, switch_bool_
 		switch_event_bind("core_db", SWITCH_EVENT_CHANNEL_DESTROY, SWITCH_EVENT_SUBCLASS_ANY, core_event_handler, NULL);
 		switch_event_bind("core_db", SWITCH_EVENT_CHANNEL_UUID, SWITCH_EVENT_SUBCLASS_ANY, core_event_handler, NULL);
 		switch_event_bind("core_db", SWITCH_EVENT_CHANNEL_CREATE, SWITCH_EVENT_SUBCLASS_ANY, core_event_handler, NULL);
+		switch_event_bind("core_db", SWITCH_EVENT_CHANNEL_CREATE_ON_RETRY, SWITCH_EVENT_SUBCLASS_ANY, core_event_handler, NULL);
 		switch_event_bind("core_db", SWITCH_EVENT_CHANNEL_ANSWER, SWITCH_EVENT_SUBCLASS_ANY, core_event_handler, NULL);
 		switch_event_bind("core_db", SWITCH_EVENT_CHANNEL_PROGRESS_MEDIA, SWITCH_EVENT_SUBCLASS_ANY, core_event_handler, NULL);
 		switch_event_bind("core_db", SWITCH_EVENT_CHANNEL_HOLD, SWITCH_EVENT_SUBCLASS_ANY, core_event_handler, NULL);
@@ -3882,6 +4303,7 @@ switch_status_t switch_core_sqldb_start(switch_memory_pool_t *pool, switch_bool_
 		switch_event_bind("core_db", SWITCH_EVENT_CHANNEL_CALLSTATE, SWITCH_EVENT_SUBCLASS_ANY, core_event_handler, NULL);
 		switch_event_bind("core_db", SWITCH_EVENT_CHANNEL_STATE, SWITCH_EVENT_SUBCLASS_ANY, core_event_handler, NULL);
 		switch_event_bind("core_db", SWITCH_EVENT_CHANNEL_BRIDGE, SWITCH_EVENT_SUBCLASS_ANY, core_event_handler, NULL);
+		switch_event_bind("core_db", SWITCH_EVENT_CHANNEL_BRIDGE_ON_RETRY, SWITCH_EVENT_SUBCLASS_ANY, core_event_handler, NULL);
 		switch_event_bind("core_db", SWITCH_EVENT_CHANNEL_UNBRIDGE, SWITCH_EVENT_SUBCLASS_ANY, core_event_handler, NULL);
 		switch_event_bind("core_db", SWITCH_EVENT_SHUTDOWN, SWITCH_EVENT_SUBCLASS_ANY, core_event_handler, NULL);
 		switch_event_bind("core_db", SWITCH_EVENT_LOG, SWITCH_EVENT_SUBCLASS_ANY, core_event_handler, NULL);

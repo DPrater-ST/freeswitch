@@ -916,6 +916,10 @@ SWITCH_DECLARE(char *) switch_core_get_uuid(void);
 SWITCH_DECLARE(switch_core_session_t *) switch_core_session_perform_locate(const char *uuid_str, const char *file, const char *func, int line);
 SWITCH_DECLARE(switch_core_session_t *) switch_core_session_perform_force_locate(const char *uuid_str, const char *file, const char *func, int line);
 
+SWITCH_DECLARE(switch_core_session_t *) switch_core_session_fetch_running_perform(void * session, const char *file, const char *func, int line);
+
+#define switch_core_session_fetch_running(session) switch_core_session_fetch_running_perform(session, __FILE__, __SWITCH_FUNC__, __LINE__)
+
 
 /*!
   \brief Locate a session based on it's uuid
@@ -2629,6 +2633,19 @@ SWITCH_DECLARE(switch_status_t) switch_cache_db_execute_sql(switch_cache_db_hand
 SWITCH_DECLARE(switch_status_t) switch_cache_db_execute_sql_callback(switch_cache_db_handle_t *dbh, const char *sql,
 																	 switch_core_db_callback_func_t callback, void *pdata, char **err);
 
+
+/*!
+ \brief Executes the sql and uses callback for row-by-row processing
+ \param [in] dbh The handle
+ \param [in] update_sql - update sql to run
+ \param [in] select_sql - select sql to run 
+ \param [in] callback - function pointer to callback
+ \param [in] pdata - data to pass to callback
+ \param [out] err - Error if it exists
+*/
+SWITCH_DECLARE(switch_status_t) switch_cache_db_execute_update_select_single_sql_callback(switch_cache_db_handle_t *dbh, const char *update_sql, const char *select_sql,
+																	 switch_core_db_callback_func_t callback, void *pdata, char **err);
+
 /*!
  \brief Executes the sql and uses callback for row-by-row processing
  \param [in] dbh The handle
@@ -2839,6 +2856,8 @@ SWITCH_DECLARE(void) switch_core_autobind_cpu(void);
 SWITCH_DECLARE(switch_status_t) switch_core_session_start_text_thread(switch_core_session_t *session);
 
 SWITCH_DECLARE(const char *) switch_core_get_event_channel_key_separator(void);
+
+SWITCH_DECLARE(switch_status_t)switch_core_session_update_codec_events_on_retry(switch_core_session_t *session);
 
 SWITCH_END_EXTERN_C
 #endif

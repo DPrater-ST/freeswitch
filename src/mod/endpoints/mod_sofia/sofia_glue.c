@@ -2384,7 +2384,7 @@ int sofia_glue_init_sql(sofia_profile_t *profile)
 	char *test_sql = NULL;
 
 	char reg_sql[] =
-		"CREATE TABLE sip_registrations (\n"
+		"CREATE TABLE if not exists sip_registrations (\n"
 		"   call_id          VARCHAR(255),\n"
 		"   sip_user         VARCHAR(255),\n"
 		"   sip_host         VARCHAR(255),\n"
@@ -2415,7 +2415,7 @@ int sofia_glue_init_sql(sofia_profile_t *profile)
 		");\n";
 
 	char pres_sql[] =
-		"CREATE TABLE sip_presence (\n"
+		"CREATE TABLE if not exists sip_presence (\n"
 		"   sip_user        VARCHAR(255),\n"
 		"   sip_host        VARCHAR(255),\n"
 		"   status          VARCHAR(255),\n"
@@ -2430,7 +2430,7 @@ int sofia_glue_init_sql(sofia_profile_t *profile)
 		");\n";
 
 	char dialog_sql[] =
-		"CREATE TABLE sip_dialogs (\n"
+		"CREATE TABLE if not exists sip_dialogs (\n"
 		"   call_id         VARCHAR(255),\n"
 		"   uuid            VARCHAR(255),\n"
 		"   sip_to_user     VARCHAR(255),\n"
@@ -2458,7 +2458,7 @@ int sofia_glue_init_sql(sofia_profile_t *profile)
 		");\n";
 
 	char sub_sql[] =
-		"CREATE TABLE sip_subscriptions (\n"
+		"CREATE TABLE if not exists sip_subscriptions (\n"
 		"   proto           VARCHAR(255),\n"
 		"   sip_user        VARCHAR(255),\n"
 		"   sip_host        VARCHAR(255),\n"
@@ -2483,7 +2483,7 @@ int sofia_glue_init_sql(sofia_profile_t *profile)
 		");\n";
 
 	char auth_sql[] =
-		"CREATE TABLE sip_authentication (\n"
+		"CREATE TABLE if not exists sip_authentication (\n"
 		"   nonce           VARCHAR(255),\n"
 		"   expires         BIGINT,"
 		"   profile_name    VARCHAR(255),\n"
@@ -2493,7 +2493,7 @@ int sofia_glue_init_sql(sofia_profile_t *profile)
 
 	/* should we move this glue to sofia_sla or keep it here where all db init happens? XXX MTK */
 	char shared_appearance_sql[] =
-		"CREATE TABLE sip_shared_appearance_subscriptions (\n"
+		"CREATE TABLE if not exists sip_shared_appearance_subscriptions (\n"
 		"   subscriber        VARCHAR(255),\n"
 		"   call_id           VARCHAR(255),\n"
 		"   aor               VARCHAR(255),\n"
@@ -2504,7 +2504,7 @@ int sofia_glue_init_sql(sofia_profile_t *profile)
 		");\n";
 
 	char shared_appearance_dialogs_sql[] =
-		"CREATE TABLE sip_shared_appearance_dialogs (\n"
+		"CREATE TABLE if not exists sip_shared_appearance_dialogs (\n"
 		"   profile_name      VARCHAR(255),\n"
 		"   hostname          VARCHAR(255),\n"
 		"   contact_str       VARCHAR(255),\n"
@@ -2516,89 +2516,152 @@ int sofia_glue_init_sql(sofia_profile_t *profile)
 
 	int x;
 	char *indexes[] = {
-		"create index sr_call_id on sip_registrations (call_id)",
-		"create index sr_sip_user on sip_registrations (sip_user)",
-		"create index sr_sip_host on sip_registrations (sip_host)",
-		"create index sr_sub_host on sip_registrations (sub_host)",
-		"create index sr_mwi_user on sip_registrations (mwi_user)",
-		"create index sr_mwi_host on sip_registrations (mwi_host)",
-		"create index sr_profile_name on sip_registrations (profile_name)",
-		"create index sr_presence_hosts on sip_registrations (presence_hosts)",
-		"create index sr_contact on sip_registrations (contact)",
-		"create index sr_expires on sip_registrations (expires)",
-		"create index sr_ping_expires on sip_registrations (ping_expires)",
-		"create index sr_hostname on sip_registrations (hostname)",
-		"create index sr_status on sip_registrations (status)",
-		"create index sr_ping_status on sip_registrations (ping_status)",
-		"create index sr_network_ip on sip_registrations (network_ip)",
-		"create index sr_network_port on sip_registrations (network_port)",
-		"create index sr_sip_username on sip_registrations (sip_username)",
-		"create index sr_sip_realm on sip_registrations (sip_realm)",
-		"create index sr_orig_server_host on sip_registrations (orig_server_host)",
-		"create index sr_orig_hostname on sip_registrations (orig_hostname)",
-		"create index ss_call_id on sip_subscriptions (call_id)",
-		"create index ss_multi on sip_subscriptions (call_id, profile_name, hostname)",
-		"create index ss_hostname on sip_subscriptions (hostname)",
-		"create index ss_network_ip on sip_subscriptions (network_ip)",
-		"create index ss_sip_user on sip_subscriptions (sip_user)",
-		"create index ss_sip_host on sip_subscriptions (sip_host)",
-		"create index ss_presence_hosts on sip_subscriptions (presence_hosts)",
-		"create index ss_event on sip_subscriptions (event)",
-		"create index ss_proto on sip_subscriptions (proto)",
-		"create index ss_sub_to_user on sip_subscriptions (sub_to_user)",
-		"create index ss_sub_to_host on sip_subscriptions (sub_to_host)",
-		"create index ss_expires on sip_subscriptions (expires)",
-		"create index ss_orig_proto on sip_subscriptions (orig_proto)",
-		"create index ss_network_port on sip_subscriptions (network_port)",
-		"create index ss_profile_name on sip_subscriptions (profile_name)",
-		"create index ss_version on sip_subscriptions (version)",
-		"create index ss_full_from on sip_subscriptions (full_from)",
-		"create index ss_contact on sip_subscriptions (contact)",
-		"create index sd_uuid on sip_dialogs (uuid)",
-		"create index sd_hostname on sip_dialogs (hostname)",
-		"create index sd_presence_data on sip_dialogs (presence_data)",
-		"create index sd_call_info on sip_dialogs (call_info)",
-		"create index sd_call_info_state on sip_dialogs (call_info_state)",
-		"create index sd_expires on sip_dialogs (expires)",
-		"create index sd_rcd on sip_dialogs (rcd)",
-		"create index sd_sip_to_tag on sip_dialogs (sip_to_tag)",
-		"create index sd_sip_from_user on sip_dialogs (sip_from_user)",
-		"create index sd_sip_from_host on sip_dialogs (sip_from_host)",
-		"create index sd_sip_to_host on sip_dialogs (sip_to_host)",
-		"create index sd_presence_id on sip_dialogs (presence_id)",
-		"create index sd_call_id on sip_dialogs (call_id)",
-		"create index sd_sip_from_tag on sip_dialogs (sip_from_tag)",
-		"create index sp_hostname on sip_presence (hostname)",
-		"create index sp_open_closed on sip_presence (open_closed)",
-		"create index sp_sip_user on sip_presence (sip_user)",
-		"create index sp_sip_host on sip_presence (sip_host)",
-		"create index sp_profile_name on sip_presence (profile_name)",
-		"create index sp_expires on sip_presence (expires)",
-		"create index sa_nonce on sip_authentication (nonce)",
-		"create index sa_hostname on sip_authentication (hostname)",
-		"create index sa_expires on sip_authentication (expires)",
-		"create index sa_last_nc on sip_authentication (last_nc)",
-		"create index ssa_hostname on sip_shared_appearance_subscriptions (hostname)",
-		"create index ssa_network_ip on sip_shared_appearance_subscriptions (network_ip)",
-		"create index ssa_subscriber on sip_shared_appearance_subscriptions (subscriber)",
-		"create index ssa_profile_name on sip_shared_appearance_subscriptions (profile_name)",
-		"create index ssa_aor on sip_shared_appearance_subscriptions (aor)",
-		"create index ssd_profile_name on sip_shared_appearance_dialogs (profile_name)",
-		"create index ssd_hostname on sip_shared_appearance_dialogs (hostname)",
-		"create index ssd_contact_str on sip_shared_appearance_dialogs (contact_str)",
-		"create index ssd_call_id on sip_shared_appearance_dialogs (call_id)",
-		"create index ssd_expires on sip_shared_appearance_dialogs (expires)",
+		"create index if not exists sr_call_id on sip_registrations (call_id)",
+		"create index if not exists sr_sip_user on sip_registrations (sip_user)",
+		"create index if not exists sr_sip_host on sip_registrations (sip_host)",
+		"create index if not exists sr_sub_host on sip_registrations (sub_host)",
+		"create index if not exists sr_mwi_user on sip_registrations (mwi_user)",
+		"create index if not exists sr_mwi_host on sip_registrations (mwi_host)",
+		"create index if not exists sr_profile_name on sip_registrations (profile_name)",
+		"create index if not exists sr_presence_hosts on sip_registrations (presence_hosts)",
+		"create index if not exists sr_contact on sip_registrations (contact)",
+		"create index if not exists sr_expires on sip_registrations (expires)",
+		"create index if not exists sr_ping_expires on sip_registrations (ping_expires)",
+		"create index if not exists sr_hostname on sip_registrations (hostname)",
+		"create index if not exists sr_status on sip_registrations (status)",
+		"create index if not exists sr_ping_status on sip_registrations (ping_status)",
+		"create index if not exists sr_network_ip on sip_registrations (network_ip)",
+		"create index if not exists sr_network_port on sip_registrations (network_port)",
+		"create index if not exists sr_sip_username on sip_registrations (sip_username)",
+		"create index if not exists sr_sip_realm on sip_registrations (sip_realm)",
+		"create index if not exists sr_orig_server_host on sip_registrations (orig_server_host)",
+		"create index if not exists sr_orig_hostname on sip_registrations (orig_hostname)",
+		"create index if not exists ss_call_id on sip_subscriptions (call_id)",
+		"create index if not exists ss_multi on sip_subscriptions (call_id, profile_name, hostname)",
+		"create index if not exists ss_hostname on sip_subscriptions (hostname)",
+		"create index if not exists ss_network_ip on sip_subscriptions (network_ip)",
+		"create index if not exists ss_sip_user on sip_subscriptions (sip_user)",
+		"create index if not exists ss_sip_host on sip_subscriptions (sip_host)",
+		"create index if not exists ss_presence_hosts on sip_subscriptions (presence_hosts)",
+		"create index if not exists ss_event on sip_subscriptions (event)",
+		"create index if not exists ss_proto on sip_subscriptions (proto)",
+		"create index if not exists ss_sub_to_user on sip_subscriptions (sub_to_user)",
+		"create index if not exists ss_sub_to_host on sip_subscriptions (sub_to_host)",
+		"create index if not exists ss_expires on sip_subscriptions (expires)",
+		"create index if not exists ss_orig_proto on sip_subscriptions (orig_proto)",
+		"create index if not exists ss_network_port on sip_subscriptions (network_port)",
+		"create index if not exists ss_profile_name on sip_subscriptions (profile_name)",
+		"create index if not exists ss_version on sip_subscriptions (version)",
+		"create index if not exists ss_full_from on sip_subscriptions (full_from)",
+		"create index if not exists ss_contact on sip_subscriptions (contact)",
+		"create index if not exists sd_uuid on sip_dialogs (uuid)",
+		"create index if not exists sd_hostname on sip_dialogs (hostname)",
+		"create index if not exists sd_presence_data on sip_dialogs (presence_data)",
+		"create index if not exists sd_call_info on sip_dialogs (call_info)",
+		"create index if not exists sd_call_info_state on sip_dialogs (call_info_state)",
+		"create index if not exists sd_expires on sip_dialogs (expires)",
+		"create index if not exists sd_rcd on sip_dialogs (rcd)",
+		"create index if not exists sd_sip_to_tag on sip_dialogs (sip_to_tag)",
+		"create index if not exists sd_sip_from_user on sip_dialogs (sip_from_user)",
+		"create index if not exists sd_sip_from_host on sip_dialogs (sip_from_host)",
+		"create index if not exists sd_sip_to_host on sip_dialogs (sip_to_host)",
+		"create index if not exists sd_presence_id on sip_dialogs (presence_id)",
+		"create index if not exists sd_call_id on sip_dialogs (call_id)",
+		"create index if not exists sd_sip_from_tag on sip_dialogs (sip_from_tag)",
+		"create index if not exists sp_hostname on sip_presence (hostname)",
+		"create index if not exists sp_open_closed on sip_presence (open_closed)",
+		"create index if not exists sp_sip_user on sip_presence (sip_user)",
+		"create index if not exists sp_sip_host on sip_presence (sip_host)",
+		"create index if not exists sp_profile_name on sip_presence (profile_name)",
+		"create index if not exists sp_expires on sip_presence (expires)",
+		"create index if not exists sa_nonce on sip_authentication (nonce)",
+		"create index if not exists sa_hostname on sip_authentication (hostname)",
+		"create index if not exists sa_expires on sip_authentication (expires)",
+		"create index if not exists sa_last_nc on sip_authentication (last_nc)",
+		"create index if not exists ssa_hostname on sip_shared_appearance_subscriptions (hostname)",
+		"create index if not exists ssa_network_ip on sip_shared_appearance_subscriptions (network_ip)",
+		"create index if not exists ssa_subscriber on sip_shared_appearance_subscriptions (subscriber)",
+		"create index if not exists ssa_profile_name on sip_shared_appearance_subscriptions (profile_name)",
+		"create index if not exists ssa_aor on sip_shared_appearance_subscriptions (aor)",
+		"create index if not exists ssd_profile_name on sip_shared_appearance_dialogs (profile_name)",
+		"create index if not exists ssd_hostname on sip_shared_appearance_dialogs (hostname)",
+		"create index if not exists ssd_contact_str on sip_shared_appearance_dialogs (contact_str)",
+		"create index if not exists ssd_call_id on sip_shared_appearance_dialogs (call_id)",
+		"create index if not exists ssd_expires on sip_shared_appearance_dialogs (expires)",
 		NULL
 	};
 
 	switch_cache_db_handle_t *dbh = sofia_glue_get_db_handle(profile);
 	char *test2;
 	char *err;
+	char query[2048];
+	char * sql;
 
 	if (!dbh) {
 		return 0;
 	}
 
+	memset(query, 0x0, sizeof(query));
+	strncpy(query, (char *)reg_sql, sizeof(query) - 1);
+	sql = query;
+
+	if (switch_cache_db_execute_sql(dbh, sql, &err) != SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Query failed %s, err : %s\n", sql, err);
+	}
+
+	memset(query, 0x0, sizeof(query));
+	strncpy(query, (char *)pres_sql, sizeof(query) - 1);
+	sql = query;
+	if (switch_cache_db_execute_sql(dbh, sql, &err) != SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Query failed %s, err : %s\n", sql, err);
+	}
+
+	memset(query, 0x0, sizeof(query));
+	strncpy(query, (char *)dialog_sql, sizeof(query) - 1);
+	sql = query;
+	if (switch_cache_db_execute_sql(dbh, sql, &err) != SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Query failed %s, err : %s\n", sql, err);
+	}
+
+	memset(query, 0x0, sizeof(query));
+	strncpy(query, (char *)sub_sql, sizeof(query) - 1);
+	sql = query;
+	if (switch_cache_db_execute_sql(dbh, sql, &err) != SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Query failed %s, err : %s\n", sql, err);
+	}
+
+	memset(query, 0x0, sizeof(query));
+	strncpy(query, (char *)auth_sql, sizeof(query) - 1);
+	sql = query;
+	if (switch_cache_db_execute_sql(dbh, sql, &err) != SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Query failed %s, err : %s\n", sql, err);
+	}
+
+	memset(query, 0x0, sizeof(query));
+	strncpy(query, (char *)shared_appearance_sql, sizeof(query) - 1);
+	sql = query;
+	if (switch_cache_db_execute_sql(dbh, sql, &err) != SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Query failed %s, err : %s\n", sql, err);
+	}
+
+	memset(query, 0x0, sizeof(query));
+	strncpy(query, (char *)shared_appearance_dialogs_sql, sizeof(query) - 1);
+	sql = query;
+	if (switch_cache_db_execute_sql(dbh, sql, &err) != SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Query failed %s, err : %s\n", sql, err);
+	}
+
+#if 0
+	// The indexes automatically creating here even though we set auto create schema to false
+	for (x = 0; indexes[x]; x++) {
+		memset(query, 0x0, sizeof(query));
+		strncpy(query, (char *)indexes[x], sizeof(query) - 1);	
+		sql = query;
+		if (switch_cache_db_execute_sql(dbh, sql, &err) != SWITCH_STATUS_SUCCESS) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Query failed %s, err : %s\n", sql, err);
+		}
+	}
+#endif
 
 	test_sql = switch_mprintf("delete from sip_registrations where sub_host is null "
 							  "and hostname='%q' "
@@ -2847,6 +2910,45 @@ switch_bool_t sofia_glue_execute_sql_callback(sofia_profile_t *profile,
 
 	return ret;
 }
+
+
+switch_bool_t sofia_glue_execute_update_select_single_sql_callback(sofia_profile_t *profile,
+											  switch_mutex_t *mutex, char *update_sql, char *select_sql , switch_core_db_callback_func_t callback, void *pdata)
+{
+	switch_bool_t ret = SWITCH_FALSE;
+	char *errmsg = NULL;
+	switch_cache_db_handle_t *dbh = NULL;
+
+	if (mutex) {
+		switch_mutex_lock(mutex);
+	}
+
+	if (!(dbh = sofia_glue_get_db_handle(profile))) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error Opening DB\n");
+
+		if (mutex) {
+			switch_mutex_unlock(mutex);
+		}
+
+		return ret;
+	}
+
+	switch_cache_db_execute_update_select_single_sql_callback(dbh,  update_sql, select_sql, callback, pdata, &errmsg);
+
+	if (mutex) {
+		switch_mutex_unlock(mutex);
+	}
+
+	if (errmsg) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "SQL ERR: [%s][%s] %s\n", update_sql, select_sql, errmsg);
+		free(errmsg);
+	}
+
+	switch_cache_db_release_db_handle(&dbh);
+
+	return ret;
+}
+
 
 char *sofia_glue_execute_sql2str(sofia_profile_t *profile, switch_mutex_t *mutex, char *sql, char *resbuf, size_t len)
 {

@@ -134,6 +134,7 @@ switch_status_t sofia_presence_chat_send(switch_event_t *message_event)
 	int mstatus = 0, sanity = 0;
 	const char *blocking;
 	int is_blocking = 0;
+	switch_bool_t chat_result = SWITCH_FALSE;
 
 	proto = switch_event_get_header(message_event, "proto");
 	from_proto = switch_event_get_header(message_event, "from_proto");
@@ -342,10 +343,12 @@ switch_status_t sofia_presence_chat_send(switch_event_t *message_event)
 		switch_snprintf(header, sizeof(header), "X-FS-Sending-Message: %s", switch_core_get_uuid());
 
 		switch_uuid_str(uuid_str, sizeof(uuid_str));
+		mstatus = 0;
 
 		if (is_blocking) {
 			switch_mutex_lock(profile->flag_mutex);
 			switch_core_hash_insert(profile->chat_hash, uuid_str, &mstatus);
+	//		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "mstatus inside: %u\n",mstatus);
 			switch_mutex_unlock(profile->flag_mutex);
 		}
 
@@ -376,8 +379,10 @@ switch_status_t sofia_presence_chat_send(switch_event_t *message_event)
 				status = SWITCH_STATUS_FALSE;
 			}
 
+			if ( mstatus == 200 )      // If we get any chat response as sucess
+				chat_result = SWITCH_TRUE;
 			switch_event_add_header(message_event, SWITCH_STACK_BOTTOM, "Delivery-Result-Code", "%d", mstatus);
-
+	//		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "mstatus : %u\n",mstatus);
 			switch_mutex_lock(profile->flag_mutex);
 			switch_core_hash_delete(profile->chat_hash, uuid_str);
 			switch_mutex_unlock(profile->flag_mutex);
@@ -387,6 +392,7 @@ switch_status_t sofia_presence_chat_send(switch_event_t *message_event)
 		switch_safe_free(dup_dest);
 		switch_safe_free(user_via);
 		switch_safe_free(remote_host);
+		sleep(1);
 	}
 
   end:
@@ -403,6 +409,10 @@ switch_status_t sofia_presence_chat_send(switch_event_t *message_event)
 	if (profile) {
 		switch_thread_rwlock_unlock(profile->rwlock);
 	}
+	if( chat_result == SWITCH_TRUE ) {     // If respose is sucess than result must be successfull
+                status = SWITCH_STATUS_SUCCESS;
+                switch_event_add_header(message_event, SWITCH_STACK_BOTTOM, "Delivery-Result-Code", "200");
+        }
 
 	return status;
 }
@@ -435,6 +445,7 @@ void sofia_presence_cancel(void)
 										 "event='presence' and hostname='%q' and profile_name='%q'",
 										 mod_sofia_globals.hostname, profile->name);
 
+					// this we are not using
 					r = sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_presence_sub_callback, &helper);
 					switch_safe_free(sql);
 
@@ -829,6 +840,7 @@ static void do_dialog_probe(switch_event_t *event)
 	// Received SUBSCRIBE for "dialog" events.
 	// Return a complete list of dialogs for the monitored entity.
 	char *sql;
+	char *update_sql;
 	char *to = switch_event_get_header(event, "to");
 	char *probe_user = NULL, *probe_euser, *probe_host, *p;
 
@@ -910,13 +922,13 @@ static void do_dialog_probe(switch_event_t *event)
 		}
 
 
-		sql = switch_mprintf("update sip_subscriptions set version=version+1 where call_id='%q'", sub_call_id);
+		update_sql = switch_mprintf("update sip_subscriptions set version=version+1 where call_id='%q'", sub_call_id);
 
 		if (mod_sofia_globals.debug_presence > 1) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "%s DUMP DIALOG_PROBE set version sql:\n%s\n", profile->name, sql);
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "%s DUMP DIALOG_PROBE set version sql:\n%s\n", profile->name ? profile->name : "(null)",  sql ? sql : "(null)");
 		}
-		sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
-		switch_safe_free(sql);
+		//sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
+		//switch_safe_free(sql);
 
 
 		// The dialog_probe_callback has built up the dialogs to be included in the NOTIFY.
@@ -931,7 +943,8 @@ static void do_dialog_probe(switch_event_t *event)
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "%s DUMP DIALOG_PROBE subscription sql:\n%s\n", profile->name, sql);
 		}
 
-		sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_dialog_probe_notify_callback, h4235);
+		sofia_glue_execute_update_select_single_sql_callback(profile, profile->dbh_mutex, update_sql, sql, sofia_dialog_probe_notify_callback, h4235);
+		switch_safe_free(update_sql);
 		switch_safe_free(sql);
 
 		sofia_glue_release_profile(profile);
@@ -1095,6 +1108,24 @@ static void conference_data_event_handler(switch_event_t *event)
 	switch_safe_free(dup_domain);
 }
 
+// This is to dump the event 
+void dump_switch_event(switch_event_t *event) 
+{
+    char *event_str;
+
+    if (event) {
+        switch_event_serialize_json(event, &event_str);
+        if (event_str) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Event: %s\n", event_str);
+            free(event_str);
+        } else {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to serialize event\n");
+        }
+    } else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Event is NULL\n");
+    }
+}
+
 static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event)
 {
 	sofia_profile_t *profile = NULL;
@@ -1106,19 +1137,30 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 	char *alt_event_type = switch_event_get_header(event, "alt_event_type");
 	//char *event_subtype = switch_event_get_header(event, "event_subtype");
 	char *sql = NULL;
+	char *update_sql = NULL;
 	char *euser = NULL, *user = NULL, *host = NULL;
 	char *call_info = switch_event_get_header(event, "presence-call-info");
 	char *call_id = switch_event_get_header(event, "call-id");
 	char *presence_source = switch_event_get_header(event, "presence-source");
 	char *call_info_state = switch_event_get_header(event, "presence-call-info-state");
 	const char *uuid = switch_event_get_header(event, "unique-id");
+	char * calling_file = switch_event_get_header(event, "Event-Calling-File");
 	switch_console_callback_match_t *matches = NULL;
 	struct presence_helper helper = { 0 };
 	int hup = 0;
 	switch_event_t *s_event = NULL;
+	int is_register = 0;
 
 	if (!mod_sofia_globals.running) {
 		goto done;
+	}
+
+	if(presence_source && !strcmp(presence_source, "register")) {
+		is_register = 1;	
+	}
+
+	if(calling_file && !strcmp(calling_file, "sofia_reg.c")) {
+		is_register = 1;
 	}
 
 	if (zstr(proto) || !strcasecmp(proto, "any")) {
@@ -1155,8 +1197,8 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 
 			for (m = matches->head; m; m = m->next) {
 				if ((profile = sofia_glue_find_profile(m->val))) {
+					
 					if (profile->pres_type != PRES_TYPE_FULL) {
-
 
 						if (!mod_sofia_globals.profile_hash) {
 							switch_console_free_matches(&matches);
@@ -1166,7 +1208,7 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 
 						if (from) {
 
-							sql = switch_mprintf("update sip_subscriptions set version=version+1 where hostname='%q' and profile_name='%q' and "
+							update_sql = switch_mprintf("update sip_subscriptions set version=version+1 where hostname='%q' and profile_name='%q' and "
 												 "sip_subscriptions.event='presence' and sip_subscriptions.full_from like '%%%q%%'",
 												 mod_sofia_globals.hostname, profile->name, from);
 
@@ -1174,8 +1216,7 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 								switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "PRES SQL %s\n", sql);
 							}
 
-							sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
-
+							//sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
 
 							sql = switch_mprintf("select sip_subscriptions.proto,sip_subscriptions.sip_user,sip_subscriptions.sip_host,"
 												 "sip_subscriptions.sub_to_user,sip_subscriptions.sub_to_host,sip_subscriptions.event,"
@@ -1194,14 +1235,14 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 												 switch_str_nil(status), switch_str_nil(rpid), mod_sofia_globals.hostname, profile->name, from);
 						} else {
 
-							sql = switch_mprintf("update sip_subscriptions set version=version+1 where hostname='%q' and profile_name='%q' and "
+							update_sql = switch_mprintf("update sip_subscriptions set version=version+1 where hostname='%q' and profile_name='%q' and "
 												 "sip_subscriptions.event='presence'", mod_sofia_globals.hostname, profile->name);
 
 							if (mod_sofia_globals.debug_presence > 1) {
 								switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "PRES SQL %s\n", sql);
 							}
 
-							sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
+							//sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
 
 							sql = switch_mprintf("select sip_subscriptions.proto,sip_subscriptions.sip_user,sip_subscriptions.sip_host,"
 												 "sip_subscriptions.sub_to_user,sip_subscriptions.sub_to_host,sip_subscriptions.event,"
@@ -1229,10 +1270,11 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 						sofia_glue_release_profile(profile);
 						continue;
 					}
+
 					memset(&helper, 0, sizeof(helper));
 					helper.profile = profile;
 					helper.event = NULL;
-					sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_presence_sub_callback, &helper);
+					sofia_glue_execute_update_select_single_sql_callback(profile, profile->dbh_mutex, update_sql, sql, sofia_presence_sub_callback, &helper);
 					switch_safe_free(sql);
 					sofia_glue_release_profile(profile);
 				}
@@ -1358,17 +1400,34 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 					proto = SOFIA_CHAT_PROTO;
 				}
 
-				if (zstr(uuid)) {
+
+
+				if (!zstr(call_id)) {
+
+
+					if(!strcmp(proto, "park")) {
+
+
+						//sql = switch_mprintf("select state,status,rpid,presence_id,uuid, 1 as park  from sip_dialogs where uuid in (select uuid from channels where hostname='%q' and application = 'valet_park' and application_data ='%q@%q %q') and profile_name='%q'", mod_sofia_globals.hostname, euser, host, euser, profile->name);
+
+						sql = switch_mprintf("select 'confirmed' as state, NULL as status , NULL as rpid,  '%q@%q' as presence_id, uuid, 1 as park from channels where hostname='%q' and application = 'valet_park' and application_data ='%q@%q %q'", euser, host, mod_sofia_globals.hostname, euser, host, euser);
+
+
+					} else {	 
+
+						sql = switch_mprintf("select state,status,rpid,presence_id,uuid from sip_dialogs "
+											 "where call_info_state != 'seized' and hostname='%q' and profile_name='%q' and "
+											 "((sip_from_user='%q' and sip_from_host='%q') or presence_id='%q@%q') order by rcd desc",
+											 mod_sofia_globals.hostname, profile->name, euser, host, euser, host);
+					}
+				} else {
+
 
 					sql = switch_mprintf("select state,status,rpid,presence_id,uuid from sip_dialogs "
-										 "where call_info_state != 'seized' and hostname='%q' and profile_name='%q' and "
-										 "((sip_from_user='%q' and sip_from_host='%q') or presence_id='%q@%q') order by rcd desc",
-										 mod_sofia_globals.hostname, profile->name, euser, host, euser, host);
-				} else {
-					sql = switch_mprintf("select state,status,rpid,presence_id,uuid from sip_dialogs "
-										 "where uuid != '%q' and call_info_state != 'seized' and hostname='%q' and profile_name='%q' and "
-										 "((sip_from_user='%q' and sip_from_host='%q') or presence_id='%q@%q') order by rcd desc",
-										 uuid, mod_sofia_globals.hostname, profile->name, euser, host, euser, host);
+									 "where uuid != '%q' and call_info_state != 'seized' and hostname='%q' and profile_name='%q' and "
+									 "((sip_from_user='%q' and sip_from_host='%q') or presence_id='%q@%q') order by rcd desc",
+									 uuid, mod_sofia_globals.hostname, profile->name, euser, host, euser, host);
+					
 				}
 
 				sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_presence_dialog_callback, &dh);
@@ -1376,6 +1435,7 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 				if (mod_sofia_globals.debug_presence > 0) {
 					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "CHECK SQL: %s@%s [%s]\nhits: %d\n", euser, host, sql, dh.hits);
 				}
+
 
 				switch_safe_free(sql);
 
@@ -1420,7 +1480,7 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 
 				if (zstr(call_id)) {
 
-					sql = switch_mprintf("update sip_subscriptions set version=version+1 where hostname='%q' and profile_name='%q' and "
+					update_sql = switch_mprintf("update sip_subscriptions set version=version+1 where hostname='%q' and profile_name='%q' and "
 										 "sip_subscriptions.event != 'line-seize' "
 										 "and sip_subscriptions.proto='%q' and (event='%q' or event='%q') and sub_to_user='%q' and "
 										 "(sub_to_host='%q' or sub_to_host='%q' or sub_to_host='%q' or "
@@ -1435,10 +1495,16 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "PRES SQL %s\n", sql);
 					}
 
-					sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
+					//sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
 
-
-
+					
+					if(is_register == 0) {
+						if(alt_event_type && !strcmp(alt_event_type, "dialog")) {
+							//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Usleep Here ?????? alt_event_type %s, calling_file %s\n", alt_event_type, calling_file);
+							//usleep( 50000 ); 
+						}
+					}
+					
 					sql = switch_mprintf("select distinct sip_subscriptions.proto,sip_subscriptions.sip_user,sip_subscriptions.sip_host,"
 										 "sip_subscriptions.sub_to_user,sip_subscriptions.sub_to_host,sip_subscriptions.event,"
 										 "sip_subscriptions.contact,sip_subscriptions.call_id,sip_subscriptions.full_from,"
@@ -1465,16 +1531,14 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 										 profile->extsipip ? profile->extsipip : "N/A", host);
 				} else {
 
-					sql = switch_mprintf("update sip_subscriptions set version=version+1 where sip_subscriptions.event != 'line-seize' and "
+					update_sql = switch_mprintf("update sip_subscriptions set version=version+1 where sip_subscriptions.event != 'line-seize' and "
 										 "sip_subscriptions.call_id='%q'", call_id);
-
-
 
 					if (mod_sofia_globals.debug_presence > 1) {
 						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "PRES SQL %s\n", sql);
 					}
 
-					sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
+					//sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
 
 
 					sql = switch_mprintf("select distinct sip_subscriptions.proto,sip_subscriptions.sip_user,sip_subscriptions.sip_host,"
@@ -1523,7 +1587,7 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 					free(buf);
 				}
 
-				sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_presence_sub_callback, &helper);
+				sofia_glue_execute_update_select_single_sql_callback(profile, profile->dbh_mutex, update_sql, sql, sofia_presence_sub_callback, &helper);
 				switch_safe_free(sql);
 
 				if (mod_sofia_globals.debug_presence > 0) {
@@ -1587,6 +1651,14 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 static int EVENT_THREAD_RUNNING = 0;
 static int EVENT_THREAD_STARTED = 0;
 
+static int MWI_EVENT_THREAD_RUNNING = 0;
+static int MWI_EVENT_THREAD_STARTED = 0;
+
+static int REG_BLF_NOTIFY_EVENT_THREAD_RUNNING = 0;
+static int REG_BLF_NOTIFY_EVENT_THREAD_STARTED = 0;
+
+
+
 static void do_flush(void)
 {
 	void *pop = NULL;
@@ -1597,6 +1669,29 @@ static void do_flush(void)
 	}
 
 }
+
+static void do_mwi_flush(void)
+{
+	void *pop = NULL;
+
+	while (mod_sofia_globals.mwi_queue && switch_queue_trypop(mod_sofia_globals.mwi_queue, &pop) == SWITCH_STATUS_SUCCESS && pop) {
+		switch_event_t *event = (switch_event_t *) pop;
+		switch_event_destroy(&event);
+	}
+
+}
+
+static void do_reg_blf_notify_flush(void)
+{
+	void *pop = NULL;
+
+	while (mod_sofia_globals.reg_blf_notify_queue && switch_queue_trypop(mod_sofia_globals.reg_blf_notify_queue, &pop) == SWITCH_STATUS_SUCCESS && pop) {
+		switch_event_t *event = (switch_event_t *) pop;
+		switch_event_destroy(&event);
+	}
+
+}
+
 
 void *SWITCH_THREAD_FUNC sofia_presence_event_thread_run(switch_thread_t *thread, void *obj)
 {
@@ -1637,6 +1732,7 @@ void *SWITCH_THREAD_FUNC sofia_presence_event_thread_run(switch_thread_t *thread
 				switch_mutex_unlock(mod_sofia_globals.mutex);
 			}
 
+			
 			switch(event->event_id) {
 			case SWITCH_EVENT_MESSAGE_WAITING:
 				actual_sofia_presence_mwi_event_handler(event);
@@ -1645,13 +1741,17 @@ void *SWITCH_THREAD_FUNC sofia_presence_event_thread_run(switch_thread_t *thread
 				conference_data_event_handler(event);
 				break;
 			default:
+
 				do {
 					switch_event_t *ievent = event;
+				
+					
 					event = actual_sofia_presence_event_handler(ievent);
 					switch_event_destroy(&ievent);
 				} while (event);
 				break;
 			}
+
 
 			switch_event_destroy(&event);
 			count++;
@@ -1669,6 +1769,158 @@ void *SWITCH_THREAD_FUNC sofia_presence_event_thread_run(switch_thread_t *thread
 
 	return NULL;
 }
+
+void *SWITCH_THREAD_FUNC sofia_mwi_event_thread_run(switch_thread_t *thread, void *obj)
+{
+	void *pop;
+	int done = 0;
+
+	switch_mutex_lock(mod_sofia_globals.mutex);
+	if (!MWI_EVENT_THREAD_RUNNING) {
+		MWI_EVENT_THREAD_RUNNING++;
+		mod_sofia_globals.threads++;
+	} else {
+		done = 1;
+	}
+	switch_mutex_unlock(mod_sofia_globals.mutex);
+
+	if (done) {
+		return NULL;
+	}
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "MWI Event Thread Started\n");
+
+	while (mod_sofia_globals.running == 1) {
+		int count = 0;
+
+		if (switch_queue_pop(mod_sofia_globals.mwi_queue, &pop) == SWITCH_STATUS_SUCCESS) {
+			switch_event_t *event = (switch_event_t *) pop;
+
+			if (!pop) {
+				break;
+			}
+
+			if (mod_sofia_globals.mwi_flush) {
+				switch_mutex_lock(mod_sofia_globals.mutex);
+				if (mod_sofia_globals.mwi_flush) {
+					do_mwi_flush();
+					mod_sofia_globals.mwi_flush = 0;
+				}
+				switch_mutex_unlock(mod_sofia_globals.mutex);
+			}
+
+ 
+			switch(event->event_id) {
+			case SWITCH_EVENT_MESSAGE_WAITING:
+				actual_sofia_presence_mwi_event_handler(event);
+				break;
+			case SWITCH_EVENT_CONFERENCE_DATA:
+				conference_data_event_handler(event);
+				break;
+			default:
+				do {
+					switch_event_t *ievent = event;
+					event = actual_sofia_presence_event_handler(ievent);
+					switch_event_destroy(&ievent);
+				} while (event);
+				break;
+			}
+
+
+			switch_event_destroy(&event);
+			count++;
+		}
+	}
+
+	do_mwi_flush();
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "MWI Event Thread Ended\n");
+
+	switch_mutex_lock(mod_sofia_globals.mutex);
+	mod_sofia_globals.threads--;
+	MWI_EVENT_THREAD_RUNNING = MWI_EVENT_THREAD_STARTED = 0;
+	switch_mutex_unlock(mod_sofia_globals.mutex);
+
+	return NULL;
+}
+
+void *SWITCH_THREAD_FUNC sofia_reg_blf_notify_event_thread_run(switch_thread_t *thread, void *obj)
+{
+	void *pop;
+	int done = 0;
+
+	switch_mutex_lock(mod_sofia_globals.mutex);
+	if (!REG_BLF_NOTIFY_EVENT_THREAD_RUNNING) {
+		REG_BLF_NOTIFY_EVENT_THREAD_RUNNING++;
+		mod_sofia_globals.threads++;
+	} else {
+		done = 1;
+	}
+	switch_mutex_unlock(mod_sofia_globals.mutex);
+
+	if (done) {
+		return NULL;
+	}
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "MWI Event Thread Started\n");
+
+	while (mod_sofia_globals.running == 1) {
+		int count = 0;
+
+		if (switch_queue_pop(mod_sofia_globals.reg_blf_notify_queue, &pop) == SWITCH_STATUS_SUCCESS) {
+			switch_event_t *event = (switch_event_t *) pop;
+
+			if (!pop) {
+				break;
+			}
+
+			if (mod_sofia_globals.reg_blf_notify_flush) {
+				switch_mutex_lock(mod_sofia_globals.mutex);
+				if (mod_sofia_globals.reg_blf_notify_flush) {
+					do_reg_blf_notify_flush();
+					mod_sofia_globals.reg_blf_notify_flush = 0;
+				}
+				switch_mutex_unlock(mod_sofia_globals.mutex);
+			}
+
+
+			switch(event->event_id) {
+			case SWITCH_EVENT_MESSAGE_WAITING:
+				actual_sofia_presence_mwi_event_handler(event);
+				break;
+			case SWITCH_EVENT_CONFERENCE_DATA:
+				conference_data_event_handler(event);
+				break;
+			default:
+				
+
+				do {
+					switch_event_t *ievent = event;
+					event = actual_sofia_presence_event_handler(ievent);
+
+					switch_event_destroy(&ievent);
+				} while (event);
+				break;
+			}
+
+			switch_event_destroy(&event);
+			count++;
+		}
+	}
+
+	do_reg_blf_notify_flush();
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "MWI Event Thread Ended\n");
+
+	switch_mutex_lock(mod_sofia_globals.mutex);
+	mod_sofia_globals.threads--;
+	REG_BLF_NOTIFY_EVENT_THREAD_RUNNING = REG_BLF_NOTIFY_EVENT_THREAD_STARTED = 0;
+	switch_mutex_unlock(mod_sofia_globals.mutex);
+
+	return NULL;
+}
+
+
 
 void sofia_presence_event_thread_start(void)
 {
@@ -1695,18 +1947,119 @@ void sofia_presence_event_thread_start(void)
 	switch_thread_create(&mod_sofia_globals.presence_thread, thd_attr, sofia_presence_event_thread_run, NULL, mod_sofia_globals.pool);
 }
 
+void sofia_mwi_event_thread_start(void)
+{
+	//switch_thread_t *thread;
+	switch_threadattr_t *thd_attr = NULL;
+	int done = 0;
+
+	switch_mutex_lock(mod_sofia_globals.mutex);
+	if (!MWI_EVENT_THREAD_STARTED) {
+		MWI_EVENT_THREAD_STARTED++;
+	} else {
+		done = 1;
+	}
+	switch_mutex_unlock(mod_sofia_globals.mutex);
+
+	if (done) {
+		return;
+	}
+
+	switch_threadattr_create(&thd_attr, mod_sofia_globals.pool);
+	//switch_threadattr_detach_set(thd_attr, 1);
+	switch_threadattr_stacksize_set(thd_attr, SWITCH_THREAD_STACKSIZE);
+	switch_threadattr_priority_set(thd_attr, SWITCH_PRI_IMPORTANT);
+	switch_thread_create(&mod_sofia_globals.mwi_thread, thd_attr, sofia_mwi_event_thread_run, NULL, mod_sofia_globals.pool);
+}
+
+
+void sofia_reg_blf_notify_event_thread_start(void)
+{
+	//switch_thread_t *thread;
+	switch_threadattr_t *thd_attr = NULL;
+	int done = 0;
+
+	switch_mutex_lock(mod_sofia_globals.mutex);
+	if (!REG_BLF_NOTIFY_EVENT_THREAD_STARTED) {
+		REG_BLF_NOTIFY_EVENT_THREAD_STARTED++;
+	} else {
+		done = 1;
+	}
+	switch_mutex_unlock(mod_sofia_globals.mutex);
+
+	if (done) {
+		return;
+	}
+
+	switch_threadattr_create(&thd_attr, mod_sofia_globals.pool);
+	//switch_threadattr_detach_set(thd_attr, 1);
+	switch_threadattr_stacksize_set(thd_attr, SWITCH_THREAD_STACKSIZE);
+	switch_threadattr_priority_set(thd_attr, SWITCH_PRI_IMPORTANT);
+	switch_thread_create(&mod_sofia_globals.reg_blf_notify_thread, thd_attr, sofia_reg_blf_notify_event_thread_run, NULL, mod_sofia_globals.pool);
+}
+
+
 
 void sofia_presence_event_handler(switch_event_t *event)
 {
 	switch_event_t *cloned_event;
+	char *presence_source = NULL;
+	char *calling_file = NULL;
 
 	if (!EVENT_THREAD_STARTED) {
 		sofia_presence_event_thread_start();
 		switch_yield(500000);
 	}
 
+	if (!MWI_EVENT_THREAD_STARTED) {
+		sofia_mwi_event_thread_start();
+		switch_yield(500000);
+	}
+
+	if (!REG_BLF_NOTIFY_EVENT_THREAD_STARTED) {
+		sofia_reg_blf_notify_event_thread_start();
+		switch_yield(500000);
+	}
+
+
 	switch_event_dup(&cloned_event, event);
 	switch_assert(cloned_event);
+
+	// Lets push the mwi to different queue
+	if(cloned_event->event_id == SWITCH_EVENT_MESSAGE_WAITING || cloned_event->event_id == SWITCH_EVENT_CONFERENCE_DATA) {
+		
+		if (switch_queue_trypush(mod_sofia_globals.mwi_queue, cloned_event) != SWITCH_STATUS_SUCCESS) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "MWI queue overloaded.... Flushing queue\n");
+			switch_mutex_lock(mod_sofia_globals.mutex);
+			mod_sofia_globals.mwi_flush = 1;
+			switch_mutex_unlock(mod_sofia_globals.mutex);
+			switch_event_destroy(&cloned_event);
+		}
+
+		return;
+
+	}	
+
+	presence_source = switch_event_get_header(cloned_event, "presence-source");
+	calling_file = switch_event_get_header(cloned_event, "Event-Calling-File");
+	
+	if((presence_source && !strcmp(presence_source, "register")) || (calling_file && !strcmp(calling_file, "sofia_reg.c"))) {
+
+		if (switch_queue_trypush(mod_sofia_globals.reg_blf_notify_queue, cloned_event) != SWITCH_STATUS_SUCCESS) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "BLF_NOTIFY queue overloaded.... Flushing queue\n");
+			switch_mutex_lock(mod_sofia_globals.mutex);
+			mod_sofia_globals.reg_blf_notify_flush = 1;
+			switch_mutex_unlock(mod_sofia_globals.mutex);
+			switch_event_destroy(&cloned_event);
+		}
+
+		return;
+
+	}
+
+
+
+	// lets push the reg initial blf notify to other queue
 
 	if (switch_queue_trypush(mod_sofia_globals.presence_queue, cloned_event) != SWITCH_STATUS_SUCCESS) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Presence queue overloaded.... Flushing queue\n");
@@ -1973,6 +2326,10 @@ static int sofia_dialog_probe_callback(void *pArg, int argc, char **argv, char *
 		for (i = 0; i < argc; i++) {
 			switch_log_printf(SWITCH_CHANNEL_LOG,SWITCH_LOG_WARNING,  "sofia_dialog_probe_callback: %d [%s]=[%s]\n", i, columnNames[i], argv[i]);
 		}
+	}
+
+	if(zstr(contact_user)) {
+		contact_user = from_user; // When doing fresh notify when call exist on other instant the contact user is coming empty as SBC sending no contact user in the contact header we are using from header for contact user
 	}
 
 	if (zstr(to_user) || zstr(contact_user)) {
