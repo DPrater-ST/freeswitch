@@ -6513,6 +6513,9 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_sofia_load)
 
 	crtp_init(*module_interface);
 
+	sofia_events_binding_completed();
+
+
 	/* indicate that the module should continue to be loaded */
 	return SWITCH_STATUS_SUCCESS;
 
