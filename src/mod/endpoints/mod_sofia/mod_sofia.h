@@ -1270,6 +1270,7 @@ void sofia_reg_close_handles(sofia_profile_t *profile);
 void write_csta_xml_chunk(switch_event_t *event, switch_stream_handle_t stream, const char *csta_event, char *fwd_type);
 void sofia_glue_clear_soa(switch_core_session_t *session, switch_bool_t partner);
 void dump_switch_event(switch_event_t *event);
+void sofia_events_binding_completed();
 
 /* For Emacs:
  * Local Variables:
