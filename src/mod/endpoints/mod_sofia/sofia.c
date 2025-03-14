@@ -69,7 +69,22 @@ struct add_db_details {
 	struct add_db_details *next;
 };
 
+struct refresh_blf_details {
+
+		char proto[256];
+		char sip_user[256];
+		char sip_host[256];
+		char sub_to_user[256];
+		char sub_to_host[256];
+		char call_id[256];
+		char profile_name[256];
+
+		struct refresh_blf_details *next;
+
+};
+
 struct add_db_details * db_details_head = NULL;
+struct refresh_blf_details * refresh_blf_details_head = NULL;
 
 static void config_sofia_profile_urls(sofia_profile_t * profile);
 static void parse_gateways(sofia_profile_t *profile, switch_xml_t gateways_tag, const char *gwname);
@@ -3326,7 +3341,7 @@ int sofia_sip_stuck_add_dialog_callback(void *pArg, int argc, char **argv, char 
 int sofia_sip_stuck_update_blf(void *pArg, int argc, char **argv, char **columnNames)
 {
 	sofia_profile_t *profile =  (sofia_profile_t *)pArg;
-	if (argc != 3) {
+	if (argc != 7) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "expected 1 arguments from query, instead got %d\n", argc);
 		return 0;
 	}
@@ -3341,17 +3356,21 @@ int sofia_sip_stuck_update_blf(void *pArg, int argc, char **argv, char **columnN
 		char *uid = argv[0]; 
 		char *direction = argv[1];
 		char *presence_id = argv[2]; 
+		char *dest = argv[3];
+		char *context = argv[4];
+		char *application = argv[5];
+		char *application_data = argv[6];
 		switch_event_t *event;
 
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Removing stuck presence here uid %s, direction %s, presence_id %s\n", uid, direction, presence_id);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Removing stuck presence here uid %s, direction %s, presence_id %s, dest %s, context %s, application %s, application_data %s\n", uid, direction, presence_id, dest, context, application, application_data);
 
 		// make sure we check if the database has any issue with NULL values
-		if(uid == NULL || direction == NULL || presence_id == NULL) {
+		if(uid == NULL || direction == NULL || presence_id == NULL || dest == NULL || context == NULL || application == NULL || application_data == NULL) {
 			return 0;
 		}
 
 		if (switch_event_create(&event, SWITCH_EVENT_PRESENCE_IN) == SWITCH_STATUS_SUCCESS) {
-			switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "proto", "dp");
+			switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "proto", "sip");
 			switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "login", __FILE__);
 			switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "from", presence_id);
 			switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "unique-id", uid);
@@ -3366,6 +3385,46 @@ int sofia_sip_stuck_update_blf(void *pArg, int argc, char **argv, char **columnN
 			switch_event_fire(&event);
 		}
 
+		if(!strcmp(application, "valet_park")) {
+			switch_event_t *pevent;
+			char park_id[256];
+
+			memset(park_id, 0x0, sizeof(park_id));
+			snprintf(park_id, sizeof(park_id) - 1, "%s@%s", dest, context); 
+
+			if(strstr(application_data, dest)) {
+				char *ptr = strchr(application_data, ' ');
+				if(ptr != NULL) {
+					*ptr ++ = '\0';
+					memset(park_id, 0x0, sizeof(park_id));
+					snprintf(park_id, sizeof(park_id) - 1, "%s", application_data);
+
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Removing stuck presence here uid %s, ptr %s, application_data %s, park_id %s\n", uid, ptr, application_data, park_id);
+				}
+
+			}
+
+
+			if (switch_event_create(&pevent, SWITCH_EVENT_PRESENCE_IN) == SWITCH_STATUS_SUCCESS) {
+				switch_event_add_header_string(pevent, SWITCH_STACK_BOTTOM, "proto", "park");
+				switch_event_add_header_string(pevent, SWITCH_STACK_BOTTOM, "login", __FILE__);
+				switch_event_add_header_string(pevent, SWITCH_STACK_BOTTOM, "from", park_id);
+				switch_event_add_header_string(pevent, SWITCH_STACK_BOTTOM, "unique-id", uid);
+				switch_event_add_header_string(pevent, SWITCH_STACK_BOTTOM, "rpid", "unknown");
+				switch_event_add_header_string(pevent, SWITCH_STACK_BOTTOM, "channel-state", "CS_HANGUP");
+				switch_event_add_header_string(pevent, SWITCH_STACK_BOTTOM, "status", "CS_HANGUP");
+				switch_event_add_header_string(pevent, SWITCH_STACK_BOTTOM, "answer-state", "terminated");
+		        switch_event_add_header_string(pevent, SWITCH_STACK_BOTTOM, "presence-call-direction", "inbound");
+				switch_event_add_header_string(pevent, SWITCH_STACK_BOTTOM, "event_type", "presence");
+				switch_event_add_header_string(pevent, SWITCH_STACK_BOTTOM, "alt_event_type", "dialog");
+				switch_event_add_header_string(pevent, SWITCH_STACK_BOTTOM, "call-direction", direction);
+				switch_event_add_header_string(pevent, SWITCH_STACK_BOTTOM, "unique-id", dest);
+				switch_event_add_header(pevent, SWITCH_STACK_BOTTOM, "event_count", "%d", 0);
+				switch_event_fire(&pevent);
+			}
+
+		}
+
 	}
 	
 	return 0;
@@ -3374,7 +3433,7 @@ int sofia_sip_stuck_update_blf(void *pArg, int argc, char **argv, char **columnN
 int sofia_sip_stuck_update_blf_refresh(void *pArg, int argc, char **argv, char **columnNames)
 {
 	sofia_profile_t *profile =  (sofia_profile_t *)pArg;
-	if (argc != 6) {
+	if (argc != 7) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "expected 1 arguments from query, instead got %d\n", argc);
 		return 0;
 	}
@@ -3391,31 +3450,42 @@ int sofia_sip_stuck_update_blf_refresh(void *pArg, int argc, char **argv, char *
 		char *sub_to_host =  argv[3];
 		char *call_id =  argv[4];
 		char *profile_name =  argv[5];
-		switch_event_t *sevent;
-		char *exp_delta_str = "";
+		char *proto = argv[6];
+		struct refresh_blf_details* current = NULL;
+		struct refresh_blf_details* details = (struct refresh_blf_details*)malloc(sizeof(struct refresh_blf_details));
 
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "BLF refresh sip_user %s, sip_host %s, sub_to_user %s, sub_to_host %s, call_id %s, profile_name %s\n", 
-						sip_user, sip_host, sub_to_user, sub_to_host, call_id, profile_name);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "BLF refresh sip_user %s, sip_host %s, sub_to_user %s, sub_to_host %s, call_id %s, profile_name %s, proto %s\n", 
+						sip_user, sip_host, sub_to_user, sub_to_host, call_id, profile_name, proto);
 
 		// make sure we check if the database has any issue with NULL values
-		if(sip_user == NULL || sip_host == NULL || sub_to_user == NULL || sub_to_host == NULL || call_id == NULL || profile_name == NULL)  {
+		if(sip_user == NULL || sip_host == NULL || sub_to_user == NULL || sub_to_host == NULL || call_id == NULL || profile_name == NULL || proto == NULL)  {
 			return 0;
 		}
 
-		if (switch_event_create(&sevent, SWITCH_EVENT_PRESENCE_PROBE) == SWITCH_STATUS_SUCCESS) {
-			switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "probe-type", "dialog");
-			switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "proto", SOFIA_CHAT_PROTO);
-			switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "login", profile_name);
-			switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "sip_profile", profile_name);
-			switch_event_add_header(sevent, SWITCH_STACK_BOTTOM, "from", "%s@%s", sip_user, sip_host);
-			switch_event_add_header(sevent, SWITCH_STACK_BOTTOM, "to", "%s@%s", sub_to_user, sub_to_host);
-			switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "proto-specific-event-name", "dialog");
-			switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "event_type", "presence");
-			switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "alt_event_type", "dialog");
-			switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "expires", exp_delta_str);
-			switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "sub-call-id", call_id);
-			switch_event_fire(&sevent);
+
+		memset(details, 0x0, sizeof(struct refresh_blf_details));
+		strncpy(details->proto, proto, sizeof(details->proto) - 1);
+		strncpy(details->sip_user, sip_user, sizeof(details->sip_user) -1);
+		strncpy(details->sip_host, sip_host, sizeof(details->sip_host) -1);
+		strncpy(details->sub_to_user, sub_to_user, sizeof(details->sub_to_user) -1);
+		strncpy(details->sub_to_host, sub_to_host, sizeof(details->sub_to_host) -1);
+		strncpy(details->call_id, call_id, sizeof(details->call_id) -1);
+		strncpy(details->profile_name, profile_name, sizeof(details->profile_name) -1);
+		details->next = NULL;
+
+		//Insert at the end
+		if(refresh_blf_details_head== NULL) {
+			refresh_blf_details_head = details;
+			return 0;
 		}
+
+		current = refresh_blf_details_head;
+		while (current->next != NULL) {
+			current = current->next;
+		}
+
+		current->next = details;
+
 
 	}
 	
@@ -3431,11 +3501,13 @@ void sofia_events_binding_completed() {
 void *SWITCH_THREAD_FUNC sofia_stuck_removal_thread_run(switch_thread_t *thread, void *obj) 
 {
 
+
 		char *sql;
 		int loop = 0;
+		int is_refresh_executed = 0;
 		sofia_profile_t *profile = (sofia_profile_t *) obj;
 
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "sofia_stuck_removal_thread_run Thread started ---------- 1\n");
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "sofia_stuck_removal_thread_run Thread started ---------- loop %d\n", loop);
 
 		while(is_blf_stuck_remove_executed == 0) {
 
@@ -3451,7 +3523,8 @@ void *SWITCH_THREAD_FUNC sofia_stuck_removal_thread_run(switch_thread_t *thread,
 
 			is_blf_stuck_remove_executed = 1; 
 
-			sql = switch_mprintf("select uuid, direction, presence_id from channels where local_hostname = '%q'", switch_core_get_localip());
+			sql = switch_mprintf("select uuid, direction, presence_id, dest, context, application, application_data from channels where local_hostname = '%q'", switch_core_get_localip());
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "sofia_stuck_removal_thread_run Query %s\n", sql);
 			sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_sip_stuck_update_blf, profile);
 			switch_safe_free(sql);
 
@@ -3460,12 +3533,21 @@ void *SWITCH_THREAD_FUNC sofia_stuck_removal_thread_run(switch_thread_t *thread,
 		}
 
 		// this is refreshing the existing subscriptions for the users whose blf stuck on the current one
-
-		sql = switch_mprintf("SELECT DISTINCT ss.sip_user, ss.sip_host, ss.sub_to_user, ss.sub_to_host, ss.call_id, ss.profile_name FROM channels c INNER JOIN sip_subscriptions ss ON c.presence_id = CONCAT(ss.sub_to_user, '@', ss.sub_to_host) WHERE c.local_hostname = '%q' AND ss.proto = 'sip' and ss.event = 'dialog'", switch_core_get_localip());
+		sql = switch_mprintf("SELECT DISTINCT ss.sip_user, ss.sip_host, ss.sub_to_user, ss.sub_to_host, ss.call_id, ss.profile_name, ss.proto FROM channels c INNER JOIN sip_subscriptions ss ON c.presence_id = CONCAT(ss.sub_to_user, '@', ss.sub_to_host) WHERE c.local_hostname = '%q' AND ss.proto = 'sip' and ss.event = 'dialog'", switch_core_get_localip());
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "sofia_stuck_removal_thread_run Query %s\n", sql);
 		sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_sip_stuck_update_blf_refresh, profile);
 		switch_safe_free(sql);
 
+		// this is parking Query
+		sql = switch_mprintf("SELECT DISTINCT ss.sip_user, ss.sip_host, ss.sub_to_user, ss.sub_to_host, ss.call_id, ss.profile_name, ss.proto FROM channels c INNER JOIN sip_subscriptions ss ON c.application_data = CONCAT(ss.sub_to_user, '@', ss.sub_to_host, ' ', ss.sub_to_user) WHERE c.local_hostname = '%q' AND ss.proto = 'park' and ss.event = 'dialog'", switch_core_get_localip());
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "sofia_stuck_removal_thread_run Query %s\n", sql);
+		sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_sip_stuck_update_blf_refresh, profile);
+		switch_safe_free(sql);
+
+
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "sofia_stuck_removal_thread_run Done removing blf stuck entries\n");
+
+		switch_yield(1000000); // Just waiting a second to start the thread
 
 		 for(;;) {
 
@@ -3662,6 +3744,57 @@ void *SWITCH_THREAD_FUNC sofia_stuck_removal_thread_run(switch_thread_t *thread,
 				switch_core_session_rwunlock(session);
 	
 			}
+
+			if(is_refresh_executed == 0) {
+
+				struct refresh_blf_details * blf_current = NULL;
+				struct refresh_blf_details * blf_temp = NULL;
+				switch_event_t *sevent;
+
+				is_refresh_executed = 1;
+
+				switch_yield(5000000); // waiting for 5 seconds to clear the channels and sip dialogs
+
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Executing BLF refresh on the current server");
+
+				blf_current = refresh_blf_details_head;
+				while(blf_current != NULL) {
+				
+					if (switch_event_create(&sevent, SWITCH_EVENT_PRESENCE_PROBE) == SWITCH_STATUS_SUCCESS) {
+						switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "probe-type", "dialog");
+						switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "proto", SOFIA_CHAT_PROTO);
+						switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "login", blf_current->profile_name);
+						switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "sip_profile", blf_current->profile_name);
+						switch_event_add_header(sevent, SWITCH_STACK_BOTTOM, "from", "%s@%s", blf_current->sip_user, blf_current->sip_host);
+						if(!strcmp(blf_current->proto, "park")) {
+							switch_event_add_header(sevent, SWITCH_STACK_BOTTOM, "to", "%s%s%s@%s", "park", "+", blf_current->sub_to_user, blf_current->sub_to_host);
+						} else {
+							switch_event_add_header(sevent, SWITCH_STACK_BOTTOM, "to", "%s@%s", blf_current->sub_to_user, blf_current->sub_to_host);
+						}
+
+						switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "proto-specific-event-name", "dialog");
+						switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "event_type", "presence");
+						switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "alt_event_type", "dialog");
+						switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "expires", ""); 
+						switch_event_add_header_string(sevent, SWITCH_STACK_BOTTOM, "sub-call-id", blf_current->call_id);
+						switch_event_fire(&sevent);
+					}
+
+
+					blf_current = blf_current->next;
+				}
+
+
+
+				blf_current = refresh_blf_details_head;
+				while(blf_current != NULL) {
+					blf_temp = blf_current;
+					blf_current = blf_current->next;
+					free(blf_temp);
+				}
+
+			}
+
 
 			// Removing the result
 			current = db_details_head;
