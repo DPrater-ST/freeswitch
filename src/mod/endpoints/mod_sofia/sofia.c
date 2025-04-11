@@ -7391,6 +7391,7 @@ static void sofia_handle_sip_r_invite(switch_core_session_t *session, int status
 						if ((identity = sip_identity(sip))) {
 							char *tmp = sip_header_as_string(nh->nh_home, (void *) identity);
 							if (!zstr(tmp)) {
+								switch_channel_set_variable(a_channel_one, "sip_header_Identity_exist", "true");
 								switch_channel_set_variable(a_channel_one, "sip_header_Identity", tmp);
 								su_free(nh->nh_home, tmp);
 							}
