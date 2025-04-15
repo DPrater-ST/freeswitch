@@ -7337,6 +7337,7 @@ static void sofia_handle_sip_r_invite(switch_core_session_t *session, int status
 
 		}
 
+
 		if (channel && (status == 300 || status == 301 || status == 302 || status == 305) && switch_channel_direction(channel) == SWITCH_CALL_DIRECTION_OUTBOUND) {
 			sip_contact_t *p_contact = sip->sip_contact;
 			int i = 0;
@@ -7349,6 +7350,9 @@ static void sofia_handle_sip_r_invite(switch_core_session_t *session, int status
 			const char *br_one;
 
 			if ((v = switch_channel_get_variable(channel, "outbound_redirect_fatal")) && switch_true(v)) {
+				const char * original_uuid = NULL;
+				switch_core_session_t *psession = NULL;
+
 				su_home_t *home = su_home_new(sizeof(*home));
 				switch_assert(home != NULL);
 
@@ -7382,10 +7386,13 @@ static void sofia_handle_sip_r_invite(switch_core_session_t *session, int status
 				su_home_unref(home);
 				home = NULL;
 
+				original_uuid = switch_channel_get_variable(channel, "peer_uuid");
+
 				if(status == 302 && (br_one = switch_channel_get_partner_uuid(channel))) {
 					switch_core_session_t *a_session_one;
 					switch_channel_t *a_channel_one;
 					sip_identity_t *identity = NULL;
+
 					if ((a_session_one = switch_core_session_locate(br_one)) && (a_channel_one = switch_core_session_get_channel(a_session_one))) {
 
 						if ((identity = sip_identity(sip))) {
@@ -7407,6 +7414,38 @@ static void sofia_handle_sip_r_invite(switch_core_session_t *session, int status
 
 					}
                 }
+				else if(status == 302 && original_uuid != NULL) {
+
+
+					if ((psession = switch_core_session_locate(original_uuid))) {
+						switch_channel_t *a_channel_one = switch_core_session_get_channel(psession);
+						if(a_channel_one != NULL) {
+							sip_identity_t *identity = NULL;
+
+
+							if ((identity = sip_identity(sip))) {
+								char *tmp = sip_header_as_string(nh->nh_home, (void *) identity);
+								if (!zstr(tmp)) {
+									switch_channel_set_variable(a_channel_one, "sip_header_Identity_exist", "true");
+									switch_channel_set_variable(a_channel_one, "sip_header_Identity", tmp);
+									su_free(nh->nh_home, tmp);
+								}
+							}
+
+							if (sip->sip_reason) {
+								char *tmp = sip_header_as_string(nh->nh_home, (void *) sip->sip_reason);
+								if (!zstr(tmp)) {
+									switch_channel_set_variable(a_channel_one, "sip_header_Reason", tmp);
+									su_free(nh->nh_home, tmp);
+								}
+							}
+
+						}
+						switch_core_session_rwunlock(psession);
+					}
+
+
+				}
 
 				switch_snprintf(var_name, sizeof(var_name), "sip:%d", status);
 				switch_channel_set_variable(channel, SWITCH_PROTO_SPECIFIC_HANGUP_CAUSE_VARIABLE, var_name);
