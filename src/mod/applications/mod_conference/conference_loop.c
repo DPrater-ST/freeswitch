@@ -1519,6 +1519,11 @@ void conference_loop_output(conference_member_t *member)
 						if(member == msg_member) {
 							continue;
 						}
+
+						if(msg_member->session == NULL) {
+							// Session may be destroying
+							continue;
+						}
 					
 						msg.from = from;
 						msg.message_id = SWITCH_MESSAGE_INDICATE_MESSAGE;
