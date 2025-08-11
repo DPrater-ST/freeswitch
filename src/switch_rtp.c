@@ -2762,6 +2762,11 @@ SWITCH_DECLARE(switch_status_t) switch_rtp_set_local_address(switch_rtp_t *rtp_s
 		switch_rtp_kill_socket(rtp_session);
 	}
 
+	if(rtp_session->local_addr == NULL) {
+		*err = "Local Address Error NULL!";
+		goto done;
+	}
+
 	if (switch_socket_create(&new_sock, switch_sockaddr_get_family(rtp_session->local_addr), SOCK_DGRAM, 0, rtp_session->pool) != SWITCH_STATUS_SUCCESS) {
 		*err = "Socket Error!";
 		goto done;
