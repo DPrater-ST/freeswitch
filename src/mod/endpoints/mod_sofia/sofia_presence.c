@@ -862,6 +862,7 @@ static void do_dialog_probe(switch_event_t *event)
 		sofia_profile_t *profile = sofia_glue_find_profile(probe_host);
 		struct rfc4235_helper *h4235 = {0};
 		switch_memory_pool_t *pool;
+		int version_increment = ((rand() % 9) + 1) + 10;
 
 		if (!profile && profile_name) {
 			profile = sofia_glue_find_profile(profile_name);
@@ -918,14 +919,18 @@ static void do_dialog_probe(switch_event_t *event)
 		sofia_glue_execute_sql_callback(profile, profile->dbh_mutex, sql, sofia_dialog_probe_callback, h4235);
 		switch_safe_free(sql);
 		if (mod_sofia_globals.debug_presence > 0) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%s END DIALOG_PROBE_SQL\n\n", profile->name);
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%s END DIALOG_PROBE_SQL version_increment %d\n\n", profile->name, version_increment);
 		}
 
 
-		update_sql = switch_mprintf("update sip_subscriptions set version=version+1 where call_id='%q'", sub_call_id);
+
+		//update_sql = switch_mprintf("update sip_subscriptions set version=version+%d where call_id='%q'", version_increment, sub_call_id);
+		update_sql = switch_mprintf("UPDATE sip_subscriptions SET version = CASE WHEN version = -1 THEN version + 1 ELSE version + %d END WHERE call_id='%q'", version_increment, sub_call_id);
+
+
 
 		if (mod_sofia_globals.debug_presence > 1) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "%s DUMP DIALOG_PROBE set version sql:\n%s\n", profile->name ? profile->name : "(null)",  sql ? sql : "(null)");
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "update_sql %s, %s DUMP DIALOG_PROBE set version sql:\n%s\n",  update_sql, profile->name ? profile->name : "(null)",  sql ? sql : "(null)");
 		}
 		//sofia_glue_execute_sql_now(profile, &sql, SWITCH_TRUE);
 		//switch_safe_free(sql);
@@ -1167,7 +1172,7 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 		proto = SOFIA_CHAT_PROTO;
 	}
 
-	//DUMP_EVENT(event);
+	DUMP_EVENT(event);
 
 	if (rpid && !strcasecmp(rpid, "n/a")) {
 		rpid = NULL;
