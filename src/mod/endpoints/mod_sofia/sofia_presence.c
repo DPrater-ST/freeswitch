@@ -1172,7 +1172,7 @@ static switch_event_t *actual_sofia_presence_event_handler(switch_event_t *event
 		proto = SOFIA_CHAT_PROTO;
 	}
 
-	DUMP_EVENT(event);
+	//DUMP_EVENT(event);
 
 	if (rpid && !strcasecmp(rpid, "n/a")) {
 		rpid = NULL;
