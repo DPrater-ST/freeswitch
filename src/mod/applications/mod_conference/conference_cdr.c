@@ -206,6 +206,28 @@ char *conference_cdr_rfc4579_render(conference_obj_t *conference, switch_event_t
 		switch_xml_set_txt_d(x_tag2, np->cp->caller_id_name);
 
 
+		if (channel) {
+    		const char *call_id  = switch_channel_get_variable(channel, "sip_call_id");
+   			const char *to_tag   = switch_channel_get_variable(channel, "sip_to_tag");
+    		const char *from_tag = switch_channel_get_variable(channel, "sip_from_tag");
+
+   		 	if (call_id && to_tag && from_tag) {
+      		  	char dialog[512];
+				switch_xml_t x_dlg = NULL;
+
+				memset(dialog, 0x0, sizeof(dialog));
+        		switch_snprintf(dialog, sizeof(dialog),
+                		        "%s;to-tag=%s;from-tag=%s",
+                        		call_id, to_tag, from_tag);
+
+        		/* <dialog>call-id;to-tag=...;from-tag=...</dialog> */
+      		 	x_dlg = switch_xml_add_child_d(x_tag1, "dialog", off2++);
+       			switch_assert(x_dlg);
+    		    switch_xml_set_txt_d(x_dlg, dialog);
+    		}
+		}
+
+
 		if (!(x_tag2 = switch_xml_add_child_d(x_tag1, "endpoint", off2++))) {
 			abort();
 		}
@@ -226,6 +248,8 @@ char *conference_cdr_rfc4579_render(conference_obj_t *conference, switch_event_t
 		if (!(x_tag3 = switch_xml_add_child_d(x_tag2, "joining-info", off3++))) {
 			abort();
 		}
+
+
 		if (!(x_tag4 = switch_xml_add_child_d(x_tag3, "when", off4++))) {
 			abort();
 		} else {
