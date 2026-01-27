@@ -1066,7 +1066,11 @@ static t38_mode_t configure_t38(pvt_t *pvt)
 	t38_set_fill_bit_removal(pvt->t38_core, t38_options->T38FaxFillBitRemoval);
 	t38_set_mmr_transcoding(pvt->t38_core, t38_options->T38FaxTranscodingMMR);
 	t38_set_jbig_transcoding(pvt->t38_core, t38_options->T38FaxTranscodingJBIG);
-	t38_set_max_datagram_size(pvt->t38_core, t38_options->T38FaxMaxDatagram);
+	/* RingRX fix: Always use LOCAL_FAX_MAX_DATAGRAM for T.38 IFP encoder.
+	 * T38FaxMaxDatagram from SDP refers to UDPTL packet size (with headers+redundancy),
+	 * NOT the raw IFP packet size. The UDPTL layer handles packet size constraints
+	 * via udptl_set_far_max_datagram() called in spanfax_init(). */
+	t38_set_max_datagram_size(pvt->t38_core, LOCAL_FAX_MAX_DATAGRAM);
 
 	if (t38_options->T38FaxRateManagement) {
 		if (!strcasecmp(t38_options->T38FaxRateManagement, "transferredTCF")) {
