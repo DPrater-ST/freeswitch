@@ -818,6 +818,16 @@ static switch_status_t spanfax_init(pvt_t *pvt, transport_mode_t trans_mode)
 				return SWITCH_STATUS_FALSE;
 			}
 
+			/* RingRX fix: Set UDPTL far_max_datagram from negotiated T.38 options */
+			{
+				switch_t38_options_t *t38_options = switch_channel_get_private(channel, "t38_options");
+				if (t38_options && t38_options->T38FaxMaxDatagram > 0) {
+					udptl_set_far_max_datagram(pvt->udptl_state, t38_options->T38FaxMaxDatagram);
+					switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO,
+						"Set UDPTL far_max_datagram to negotiated value: %d\n", t38_options->T38FaxMaxDatagram);
+				}
+			}
+
 			msg.from = __FILE__;
 			msg.message_id = SWITCH_MESSAGE_INDICATE_UDPTL_MODE;
 			switch_core_session_receive_message(pvt->session, &msg);
@@ -862,6 +872,16 @@ static switch_status_t spanfax_init(pvt_t *pvt, transport_mode_t trans_mode)
 			udptl_release(pvt->udptl_state);
 			pvt->udptl_state = NULL;
 			return SWITCH_STATUS_FALSE;
+		}
+
+		/* RingRX fix: Set UDPTL far_max_datagram from negotiated T.38 options */
+		{
+			switch_t38_options_t *t38_options = switch_channel_get_private(channel, "t38_options");
+			if (t38_options && t38_options->T38FaxMaxDatagram > 0) {
+				udptl_set_far_max_datagram(pvt->udptl_state, t38_options->T38FaxMaxDatagram);
+				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO,
+					"Set UDPTL far_max_datagram to negotiated value: %d\n", t38_options->T38FaxMaxDatagram);
+			}
 		}
 
 		t38_gateway_set_transmit_on_idle(pvt->t38_gateway_state, TRUE);
@@ -1127,7 +1147,23 @@ static t38_mode_t negotiate_t38(pvt_t *pvt)
         if (!t38_options->T38FaxMaxBuffer) {
             t38_options->T38FaxMaxBuffer = 2000;
         }
-		t38_options->T38FaxMaxDatagram = LOCAL_FAX_MAX_DATAGRAM;
+		/* RingRX fix: Honor remote's T38FaxMaxDatagram if smaller than ours */
+		{
+			uint32_t remote_max = t38_options->T38FaxMaxDatagram;
+			const char *var = switch_channel_get_variable(channel, "fax_max_datagram");
+			if (!zstr(var)) {
+				t38_options->T38FaxMaxDatagram = atoi(var);
+				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO,
+					"Using fax_max_datagram channel variable: %d\n", t38_options->T38FaxMaxDatagram);
+			} else if (remote_max > 0 && remote_max < LOCAL_FAX_MAX_DATAGRAM) {
+				/* Honor the remote's requested max datagram if smaller than ours (T.38 compliance) */
+				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO,
+					"Honoring remote T38FaxMaxDatagram: %d (local max was %d)\n", remote_max, LOCAL_FAX_MAX_DATAGRAM);
+				/* t38_options->T38FaxMaxDatagram already contains remote's value, keep it */
+			} else {
+				t38_options->T38FaxMaxDatagram = LOCAL_FAX_MAX_DATAGRAM;
+			}
+		}
 		if (!zstr(t38_options->T38FaxUdpEC) &&
 				(strcasecmp(t38_options->T38FaxUdpEC, "t38UDPRedundancy") == 0 ||
 				strcasecmp(t38_options->T38FaxUdpEC, "t38UDPFEC") == 0)) {
@@ -1208,7 +1244,14 @@ static t38_mode_t request_t38(pvt_t *pvt)
             t38_options->T38FaxTranscodingJBIG = 0;
             t38_options->T38FaxRateManagement = "transferredTCF";
             t38_options->T38FaxMaxBuffer = 2000;
-            t38_options->T38FaxMaxDatagram = LOCAL_FAX_MAX_DATAGRAM;
+            {
+                const char *var = switch_channel_get_variable(channel, "fax_max_datagram");
+                if (!zstr(var)) {
+                    t38_options->T38FaxMaxDatagram = atoi(var);
+                } else {
+                    t38_options->T38FaxMaxDatagram = LOCAL_FAX_MAX_DATAGRAM;
+                }
+            }
             t38_options->T38FaxUdpEC = "t38UDPRedundancy";
             t38_options->T38VendorInfo = "0 0 0";
         }
