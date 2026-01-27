@@ -5462,6 +5462,11 @@ void general_event_handler(switch_event_t *event)
 			const char *extra_headers = switch_event_get_header(event, "extra-headers");
 			const char *contact_uri = switch_event_get_header(event, "contact-uri");
 			const char *no_sub_state = switch_event_get_header(event, "no-sub-state");
+			uint32_t callsequence;
+			const char *increment_cseq = switch_event_get_header(event, "increment_cseq");
+			switch_bool_t is_increment_cseq = (increment_cseq && switch_true(increment_cseq));
+
+			sip_cseq_t *cseq = NULL;
 
 			sofia_profile_t *profile;
 
@@ -5514,12 +5519,27 @@ void general_event_handler(switch_event_t *event)
 						sip_sub_st = "terminated;reason=noresource";
 					}
 
+					if(is_increment_cseq) {
+    					callsequence = sofia_presence_get_cseq(profile);
+						cseq = sip_cseq_create(nh->nh_home, callsequence, SIP_METHOD_NOTIFY);
+						if(cseq) {
+							nua_notify(nh,
+								   NUTAG_NEWSUB(1), TAG_IF(sip_sub_st, SIPTAG_SUBSCRIPTION_STATE_STR(sip_sub_st)),
+							  	 TAG_IF(dst->route_uri, NUTAG_PROXY(dst->route_uri)), TAG_IF(dst->route, SIPTAG_ROUTE_STR(dst->route)), TAG_IF(call_id, SIPTAG_CALL_ID_STR(call_id)),
+							   SIPTAG_EVENT_STR(es), SIPTAG_CONTENT_TYPE_STR(ct), TAG_IF(!zstr(body), SIPTAG_PAYLOAD_STR(body)),
+							   TAG_IF(!zstr(extra_headers), SIPTAG_HEADER_STR(extra_headers)), 
+							   SIPTAG_CSEQ(cseq),
+							   TAG_END());
+
+						}
+					} else {
 					nua_notify(nh,
 							   NUTAG_NEWSUB(1), TAG_IF(sip_sub_st, SIPTAG_SUBSCRIPTION_STATE_STR(sip_sub_st)),
 							   TAG_IF(dst->route_uri, NUTAG_PROXY(dst->route_uri)), TAG_IF(dst->route, SIPTAG_ROUTE_STR(dst->route)), TAG_IF(call_id, SIPTAG_CALL_ID_STR(call_id)),
 							   SIPTAG_EVENT_STR(es), SIPTAG_CONTENT_TYPE_STR(ct), TAG_IF(!zstr(body), SIPTAG_PAYLOAD_STR(body)),
 							   TAG_IF(!zstr(extra_headers), SIPTAG_HEADER_STR(extra_headers)), 
 							   TAG_END());
+					}
 
 					switch_safe_free(route_uri);
 					sofia_glue_free_destination(dst);
