@@ -1152,6 +1152,7 @@ struct record_helper {
 	const char *completion_cause;
 	int start_event_sent;
 	switch_event_t *variables;
+	int thread_exited;
 };
 
 /**
@@ -1256,6 +1257,7 @@ static void *SWITCH_THREAD_FUNC recording_thread(switch_thread_t *thread, void *
 	rh = switch_core_media_bug_get_user_data(bug);
 	switch_buffer_create_dynamic(&rh->thread_buffer, 1024 * 512, 1024 * 64, 0);
 	rh->thread_ready = 1;
+	rh->thread_exited = 0;
 
 	channels = switch_core_media_bug_test_flag(bug, SMBF_STEREO) ? 2 : rh->read_impl.number_of_channels;
 	data = switch_core_session_alloc(session, SWITCH_RECOMMENDED_BUFFER_SIZE);
@@ -1293,6 +1295,8 @@ static void *SWITCH_THREAD_FUNC recording_thread(switch_thread_t *thread, void *
 			}
 		}
 	}
+
+	rh->thread_exited = 1;
 
 	switch_core_session_rwunlock(session);
 
@@ -1461,6 +1465,12 @@ static switch_bool_t record_callback(switch_media_bug_t *bug, void *user_data, s
 					switch_status_t st;
 
 					rh->thread_ready = 0;
+					while (!rh->thread_exited) {
+    					switch_yield(1000);
+					}
+
+					switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO , "Recording stopped %s\n", rh->file);
+
 					switch_thread_join(&st, rh->thread);
 				}
 
