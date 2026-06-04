@@ -275,7 +275,12 @@ SWITCH_DECLARE(int) switch_core_gen_certs(const char *prefix)
 		}
 	}
 
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+	/* CRYPTO_mem_ctrl() and CRYPTO_MEM_CHECK_ON were removed in OpenSSL 3.0.
+	 * This was a debug-only memory-leak tracking toggle with no functional
+	 * effect on cert generation. */
 	CRYPTO_mem_ctrl(CRYPTO_MEM_CHECK_ON);
+#endif
 
 	//bio_err=BIO_new_fp(stderr, BIO_NOCLOSE);
 
@@ -306,7 +311,9 @@ SWITCH_DECLARE(int) switch_core_gen_certs(const char *prefix)
 	X509_free(x509);
 	EVP_PKEY_free(pkey);
 
-#ifndef OPENSSL_NO_ENGINE
+#if !defined(OPENSSL_NO_ENGINE) && OPENSSL_VERSION_NUMBER < 0x30000000L
+	/* ENGINE_cleanup() is a deprecated no-op in OpenSSL 3.0 (engine cleanup
+	 * is automatic). Skipped on 3.x to avoid the deprecation path entirely. */
 	ENGINE_cleanup();
 #endif
 	CRYPTO_cleanup_all_ex_data();
