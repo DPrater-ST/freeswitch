@@ -98,9 +98,12 @@ jobs:
           #   mod_silk       -> libsilk-dev (Skype SILK codec; not in jammy)
           #   mod_v8         -> libv8-6.1-dev (ancient V8; not in jammy)
           #   mod_managed    -> libmono-2.0-dev/mono-mcs (.NET/mono; unused)
+          #   mod_cv         -> OpenCV 4.5 (jammy) API break (FS 1.10 uses old
+          #                     OpenCV C API); hard compile error, not -Werror.
+          #                     Computer-vision module, unused by VoiceFabric.
           for m in applications/mod_av languages/mod_python \
                    applications/mod_signalwire codecs/mod_bv codecs/mod_silk \
-                   languages/mod_v8 languages/mod_managed; do
+                   languages/mod_v8 languages/mod_managed applications/mod_cv; do
             sed -i "/^avoid_mods=(/a\\  $m" debian/bootstrap.sh
           done
           # FS's packaging generates debian/control from debian/control-modules for
