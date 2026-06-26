@@ -101,9 +101,15 @@ jobs:
           #   mod_cv         -> OpenCV 4.5 (jammy) API break (FS 1.10 uses old
           #                     OpenCV C API); hard compile error, not -Werror.
           #                     Computer-vision module, unused by VoiceFabric.
+          #   mod_perl       -> Perl links -lgdbm_compat (libgdbm-compat, not
+          #                     installed); Perl scripting unused by VoiceFabric.
+          #   mod_radius_cdr -> bundled freeradius-client runs doxygen+latex
+          #                     (latex not installed); RADIUS CDR unused (we use
+          #                     ODBC/Galera CDR).
           for m in applications/mod_av languages/mod_python \
                    applications/mod_signalwire codecs/mod_bv codecs/mod_silk \
-                   languages/mod_v8 languages/mod_managed applications/mod_cv; do
+                   languages/mod_v8 languages/mod_managed applications/mod_cv \
+                   languages/mod_perl event_handlers/mod_radius_cdr; do
             sed -i "/^avoid_mods=(/a\\  $m" debian/bootstrap.sh
           done
           # FS's packaging generates debian/control from debian/control-modules for
