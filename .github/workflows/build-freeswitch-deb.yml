@@ -89,10 +89,14 @@ jobs:
           # jammy: exclude modules whose build-deps were removed on Ubuntu 22.04,
           # via the same avoid_mods mechanism bootstrap.sh uses for mod_mp4/
           # mod_h323/etc. — so they're neither packaged nor compiled:
-          #   mod_av     -> needs libavresample-dev (removed in ffmpeg 5 / jammy)
-          #   mod_python -> Python 2 source (Py2 removed on jammy)
+          #   mod_av         -> needs libavresample-dev (removed in ffmpeg 5 / jammy)
+          #   mod_python     -> Python 2 source (Py2 removed on jammy)
+          #   mod_signalwire -> needs libks + signalwire-client-c (SignalWire's
+          #                     token-gated apt repo only; not in jammy). SignalWire
+          #                     cloud connector — unused by VoiceFabric.
           sed -i '/^avoid_mods=(/a\  applications/mod_av' debian/bootstrap.sh
           sed -i '/^avoid_mods=(/a\  languages/mod_python' debian/bootstrap.sh
+          sed -i '/^avoid_mods=(/a\  applications/mod_signalwire' debian/bootstrap.sh
           # FS's packaging generates debian/control from debian/control-modules for
           # the target distro. -c <codename> selects the module/dep set.
           # bootstrap.sh has no `cd` and uses paths relative to debian/ (mod_dir
