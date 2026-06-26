@@ -89,14 +89,22 @@ jobs:
           # jammy: exclude modules whose build-deps were removed on Ubuntu 22.04,
           # via the same avoid_mods mechanism bootstrap.sh uses for mod_mp4/
           # mod_h323/etc. — so they're neither packaged nor compiled:
-          #   mod_av         -> needs libavresample-dev (removed in ffmpeg 5 / jammy)
-          #   mod_python     -> Python 2 source (Py2 removed on jammy)
-          #   mod_signalwire -> needs libks + signalwire-client-c (SignalWire's
-          #                     token-gated apt repo only; not in jammy). SignalWire
-          #                     cloud connector — unused by VoiceFabric.
-          sed -i '/^avoid_mods=(/a\  applications/mod_av' debian/bootstrap.sh
-          sed -i '/^avoid_mods=(/a\  languages/mod_python' debian/bootstrap.sh
-          sed -i '/^avoid_mods=(/a\  applications/mod_signalwire' debian/bootstrap.sh
+          # bootstrap.sh accumulates build-deps for ALL src/mod modules minus
+          # avoid_mods (it ignores modules.conf.in here), so every module with a
+          # lib not in jammy's repos breaks mk-build-deps. Exclude the ones whose
+          # deps are absent on 22.04 (none are in the VoiceFabric module set):
+          #   mod_av         -> libavresample-dev (removed in ffmpeg 5)
+          #   mod_python     -> Python 2 source (Py2 removed)
+          #   mod_signalwire -> libks + signalwire-client-c (SignalWire repo only)
+          #   mod_bv         -> libbroadvoice-dev (BroadVoice codec; not in jammy)
+          #   mod_silk       -> libsilk-dev (Skype SILK codec; not in jammy)
+          #   mod_v8         -> libv8-6.1-dev (ancient V8; not in jammy)
+          #   mod_managed    -> libmono-2.0-dev/mono-mcs (.NET/mono; unused)
+          for m in applications/mod_av languages/mod_python \
+                   applications/mod_signalwire codecs/mod_bv codecs/mod_silk \
+                   languages/mod_v8 languages/mod_managed; do
+            sed -i "/^avoid_mods=(/a\\  $m" debian/bootstrap.sh
+          done
           # FS's packaging generates debian/control from debian/control-modules for
           # the target distro. -c <codename> selects the module/dep set.
           # bootstrap.sh has no `cd` and uses paths relative to debian/ (mod_dir
