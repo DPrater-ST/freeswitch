@@ -1,0 +1,154 @@
+# Build the ServiceTitan RingRx FreeSWITCH .deb packages and publish to S3.
+#
+# This is the "CI -> DEB" half of the VoiceFabric FS AMI pipeline:
+#   build-freeswitch-deb (HERE) -> S3 artifact -> telephony-iac packer/freeswitch
+#   (build-vf-freeswitch-ami: fs_artifact_s3_path) -> AMI -> vm-tier/freeswitch ASG.
+#
+# Builds the canonical FreeSWITCH Debian packages from this fork's debian/ tree
+# (bootstrap -> mk-build-deps -> dpkg-buildpackage), bundles the .debs, and uploads
+# them to s3://<bucket>/<prefix>/st-build-<N>/ via OIDC. The telephony-iac packer
+# build then points fs_artifact_s3_path at that bundle.
+#
+# MANUAL (workflow_dispatch) — a release build is deliberate + version-stamped.
+#
+# PREREQS (operator, one-time — see .github/CI-BUILD-PIPELINE.md):
+#   * an AWS IAM role federated to this repo's `artifacts` environment, scoped to
+#     s3:PutObject on the artifacts bucket/prefix — ARN in the `artifacts` env as
+#     secret AWS_ARTIFACTS_ROLE_ARN.
+#   * the artifacts S3 bucket (TF-managed in telephony-iac).
+# NOTE: this is a PUBLIC personal-account fork — the role is environment-scoped +
+# dispatch-only, and should be moved org-side (servicetitan/freeswitch) later.
+
+name: build-freeswitch-deb
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch / tag / SHA to build. Default v1.10_opensll3 = the consolidated RingRx line on OpenSSL 3 (native to Ubuntu 22.04). Pin a SHA for a reproducible release."
+        type: string
+        default: v1.10_opensll3
+      st_build:
+        description: "ST build number, e.g. 42 -> tag/artifact st-build-42."
+        type: string
+        required: true
+      ubuntu_codename:
+        description: "Target distro codename for debian/bootstrap.sh (match the AMI base)."
+        type: string
+        default: jammy
+      s3_bucket:
+        description: "Artifacts S3 bucket (no s3:// prefix)."
+        type: string
+        required: true
+      s3_prefix:
+        description: "Key prefix under the bucket."
+        type: string
+        default: freeswitch/ringrx
+      aws_region:
+        description: "AWS region of the artifacts bucket."
+        type: string
+        default: us-west-2
+      create_tag:
+        description: "Create + push the st-build-<N> git tag on the built commit."
+        type: boolean
+        default: true
+
+permissions:
+  id-token: write   # OIDC into the artifacts role
+  contents: write   # push the st-build-<N> tag
+
+jobs:
+  build:
+    name: build .deb (st-build-${{ inputs.st_build }})
+    runs-on: ubuntu-22.04
+    # Environment gate: holds AWS_ARTIFACTS_ROLE_ARN + scopes the OIDC subject
+    # (repo:DPrater-ST/freeswitch:environment:artifacts). Add reviewers if desired.
+    environment: artifacts
+    steps:
+      - name: Checkout ${{ inputs.ref }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          submodules: recursive
+          fetch-depth: 0   # full history so the st-build tag lands on the real commit
+
+      - name: Install packaging tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential devscripts equivs lsb-release ca-certificates git
+
+      - name: Generate debian/control (FS bootstrap)
+        shell: bash
+        env:
+          CODENAME: ${{ inputs.ubuntu_codename }}
+        run: |
+          set -euo pipefail
+          # FS's packaging generates debian/control from debian/control-modules for
+          # the target distro. -c <codename> selects the module/dep set.
+          ./debian/bootstrap.sh -c "$CODENAME"
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo mk-build-deps -i -r -t 'apt-get -y -o Debug::pkgProblemResolver=yes --no-install-recommends' debian/control
+
+      - name: Build .deb packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEB_BUILD_OPTIONS="parallel=$(nproc)"
+          dpkg-buildpackage -b -uc -us
+          mkdir -p out
+          mv ../*.deb out/
+          ( cd out && sha256sum *.deb > SHA256SUMS )
+          tar czf "out/freeswitch-st-build-${{ inputs.st_build }}.tar.gz" -C out $(cd out && ls *.deb SHA256SUMS)
+          ls -la out/
+
+      - name: AWS login (OIDC)
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ARTIFACTS_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Upload artifact to S3
+        id: upload
+        shell: bash
+        env:
+          BUCKET: ${{ inputs.s3_bucket }}
+          PREFIX: ${{ inputs.s3_prefix }}
+          STB:    ${{ inputs.st_build }}
+          REGION: ${{ inputs.aws_region }}
+        run: |
+          set -euo pipefail
+          DEST="s3://${BUCKET}/${PREFIX}/st-build-${STB}"
+          aws s3 cp out/ "${DEST}/" --recursive --region "$REGION" \
+            --exclude "*" --include "*.deb" --include "SHA256SUMS" --include "*.tar.gz"
+          TARBALL_KEY="${PREFIX}/st-build-${STB}/freeswitch-st-build-${STB}.tar.gz"
+          echo "tarball_key=${TARBALL_KEY}" >> "$GITHUB_OUTPUT"
+          echo "dest=${DEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Tag st-build-${{ inputs.st_build }}
+        if: ${{ inputs.create_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f "st-build-${{ inputs.st_build }}"
+          git push -f origin "st-build-${{ inputs.st_build }}"
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### RingRx FreeSWITCH .deb build"
+            echo "- ref: \`${{ inputs.ref }}\`  →  tag \`st-build-${{ inputs.st_build }}\`"
+            echo "- artifacts: \`${{ steps.upload.outputs.dest }}\`"
+            echo "- **fs_artifact_s3_path** for telephony-iac packer: \`${{ steps.upload.outputs.tarball_key }}\`"
+            echo "- bucket: \`${{ inputs.s3_bucket }}\` (region \`${{ inputs.aws_region }}\`)"
+          } >> "$GITHUB_STEP_SUMMARY"
