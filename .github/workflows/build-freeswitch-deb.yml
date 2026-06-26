@@ -88,7 +88,13 @@ jobs:
           set -euo pipefail
           # FS's packaging generates debian/control from debian/control-modules for
           # the target distro. -c <codename> selects the module/dep set.
-          ./debian/bootstrap.sh -c "$CODENAME"
+          # bootstrap.sh has no `cd` and uses paths relative to debian/ (mod_dir
+          # "../src/mod", writes `>> control`) — it MUST run from inside debian/,
+          # else it emits `control` to the repo root and the next step's
+          # `mk-build-deps debian/control` can't find it (treats it as a package
+          # name → `apt-cache showsrc` → "deb-src URIs" error, exit 29).
+          cd debian
+          ./bootstrap.sh -c "$CODENAME"
 
       - name: Install build dependencies
         shell: bash
