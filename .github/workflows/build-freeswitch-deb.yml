@@ -140,6 +140,12 @@ jobs:
         run: |
           set -euo pipefail
           export DEB_BUILD_OPTIONS="parallel=$(nproc)"
+          # configure.ac's python check does `python -c 'import distutils;' 2>&1`
+          # and treats ANY output as failure. On jammy's Python 3.10 the import
+          # emits a DeprecationWarning, so the otherwise-working distutils is
+          # rejected ("Could not find or use python distutils module"). Silence
+          # python warnings for the build so the capture is clean.
+          export PYTHONWARNINGS=ignore
           dpkg-buildpackage -b -uc -us
           mkdir -p out
           mv ../*.deb out/
