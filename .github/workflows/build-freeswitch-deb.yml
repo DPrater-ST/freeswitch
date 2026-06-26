@@ -25,9 +25,9 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Branch / tag / SHA to build (the ST RingRx release ref)."
+        description: "Branch / tag / SHA to build. Default v1.10_opensll3 = the consolidated RingRx line on OpenSSL 3 (native to Ubuntu 22.04). Pin a SHA for a reproducible release."
         type: string
-        default: master
+        default: v1.10_opensll3
       st_build:
         description: "ST build number, e.g. 42 -> tag/artifact st-build-42."
         type: string

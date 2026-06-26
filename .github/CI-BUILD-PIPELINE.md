@@ -15,8 +15,10 @@ build-freeswitch-deb (this repo)         telephony-iac
 
 ## Run
 Actions → **build-freeswitch-deb** → Run workflow. Inputs:
-- `ref` — the ST RingRx release ref to build (branch/tag/SHA). **The patch branches
-  aren't consolidated on `master` yet** — point this at the agreed release ref.
+- `ref` — defaults to **`v1.10_opensll3`**: the consolidated RingRx
+  line **on OpenSSL 3** (native to Ubuntu 22.04 / `jammy` — no OpenSSL-1.1 shim). Pulled
+  from upstream `RingRx/freeswitch` (Ryan Delgrosso). `v1.10_ringrx` is the older
+  OpenSSL-1.1 production line if ever needed. Pin a SHA for a reproducible release.
 - `st_build` — build number (e.g. `42` → `st-build-42` tag + artifact path).
 - `ubuntu_codename` — `jammy` (match the AMI base in telephony-iac).
 - `s3_bucket` / `s3_prefix` — the VF artifacts bucket (`freeswitch/ringrx` prefix).
