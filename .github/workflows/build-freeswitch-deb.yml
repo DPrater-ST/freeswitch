@@ -95,13 +95,22 @@ jobs:
           # name → `apt-cache showsrc` → "deb-src URIs" error, exit 29).
           cd debian
           ./bootstrap.sh -c "$CODENAME"
-          # bootstrap.sh's supported_ubuntu_distros predates jammy, so for any
-          # use_sysvinit=false distro it appends `dh-systemd` to Build-Depends.
-          # dh-systemd was removed after bionic (folded into debhelper); on jammy
-          # (debhelper 13, systemd sequence native) it's unsatisfiable and breaks
-          # mk-build-deps. Strip it from the generated control.
-          sed -i -E 's/,[[:space:]]*dh-systemd//g; s/dh-systemd,[[:space:]]*//g' control
-          echo "Build-Depends after dh-systemd strip:"; grep -A2 -i '^Build-Depends' control || true
+          # bootstrap.sh's supported_ubuntu_distros predates jammy, so its
+          # generated Build-Depends carry packages removed on Ubuntu 22.04:
+          #   dh-systemd     -> folded into debhelper 13 (systemd seq native)
+          #   python-dev     -> Python 2 removed; use python3-dev
+          #   python-all-dev -> Python 2 removed; use python3-all-dev
+          #   libtiff5-dev   -> renamed libtiff-dev
+          # (python-support|dh-python, libssl1.0-dev|libssl-dev, libjpeg* alts are
+          #  already satisfiable on jammy via their modern alternative.)
+          sed -i -E \
+            -e 's/,[[:space:]]*dh-systemd//g; s/dh-systemd,[[:space:]]*//g' \
+            -e 's/\bpython-all-dev\b/python3-all-dev/g' \
+            -e 's/\bpython-dev\b/python3-dev/g' \
+            -e 's/\blibtiff5-dev\b/libtiff-dev/g' \
+            control
+          echo "=== Build-Depends after jammy patch ==="
+          sed -n '/^Build-Depends:/,/^Standards-Version:/p' control || true
 
       - name: Install build dependencies
         shell: bash
