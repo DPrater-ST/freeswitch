@@ -112,6 +112,17 @@ jobs:
                    languages/mod_perl event_handlers/mod_radius_cdr; do
             sed -i "/^avoid_mods=(/a\\  $m" debian/bootstrap.sh
           done
+          # Drop the ESL Python/Perl SWIG client bindings (python-esl, libesl-perl).
+          # The python binding is Python-2 only (libs/esl/python/Makefile uses
+          # `python ./python-config` + py2 `print get_python_lib`) and fails on
+          # jammy with "Python.h: No such file or directory". Neither is used by
+          # VoiceFabric (ESL is consumed by K8s pods, not these SWIG libs). Remove
+          # their package stanzas from the generated control (nothing depends on
+          # them) and their build/install steps from debian/rules.
+          sed -i '/^Package: python-esl$/,/^Package: freeswitch-meta-bare$/{/^Package: freeswitch-meta-bare$/!d}' debian/bootstrap.sh
+          sed -i '\#make -C libs/esl pymod#d; \#make -C libs/esl perlmod#d' debian/rules
+          sed -i '\#dh_auto_install -- -C libs/esl pymod-install#d; \#dh_auto_install -- -C libs/esl perlmod-install#d' debian/rules
+          grep -q '^Package: python-esl' debian/bootstrap.sh && { echo "python-esl stanza still present"; exit 1; } || true
           # FS's packaging generates debian/control from debian/control-modules for
           # the target distro. -c <codename> selects the module/dep set.
           # bootstrap.sh has no `cd` and uses paths relative to debian/ (mod_dir
