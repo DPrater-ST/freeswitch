@@ -95,6 +95,13 @@ jobs:
           # name → `apt-cache showsrc` → "deb-src URIs" error, exit 29).
           cd debian
           ./bootstrap.sh -c "$CODENAME"
+          # bootstrap.sh's supported_ubuntu_distros predates jammy, so for any
+          # use_sysvinit=false distro it appends `dh-systemd` to Build-Depends.
+          # dh-systemd was removed after bionic (folded into debhelper); on jammy
+          # (debhelper 13, systemd sequence native) it's unsatisfiable and breaks
+          # mk-build-deps. Strip it from the generated control.
+          sed -i -E 's/,[[:space:]]*dh-systemd//g; s/dh-systemd,[[:space:]]*//g' control
+          echo "Build-Depends after dh-systemd strip:"; grep -A2 -i '^Build-Depends' control || true
 
       - name: Install build dependencies
         shell: bash
