@@ -146,6 +146,14 @@ jobs:
           # rejected ("Could not find or use python distutils module"). Silence
           # python warnings for the build so the capture is clean.
           export PYTHONWARNINGS=ignore
+          # FS core (e.g. src/switch_apr.c) still calls OpenSSL's legacy MD5_*
+          # API, deprecated (but present + linkable) in OpenSSL 3. FS builds with
+          # -Werror, so -Werror=deprecated-declarations turns those into hard
+          # errors on jammy (OpenSSL 3). Demote deprecation back to a warning;
+          # dpkg-buildflags CFLAGS land after FS's AM_CFLAGS -Werror, so an
+          # append wins. Covers any other OpenSSL-3-deprecated call sites too.
+          export DEB_CFLAGS_APPEND="-Wno-error=deprecated-declarations"
+          export DEB_CXXFLAGS_APPEND="-Wno-error=deprecated-declarations"
           dpkg-buildpackage -b -uc -us
           mkdir -p out
           mv ../*.deb out/
