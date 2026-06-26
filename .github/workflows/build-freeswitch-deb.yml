@@ -146,14 +146,16 @@ jobs:
           # rejected ("Could not find or use python distutils module"). Silence
           # python warnings for the build so the capture is clean.
           export PYTHONWARNINGS=ignore
-          # FS core (e.g. src/switch_apr.c) still calls OpenSSL's legacy MD5_*
-          # API, deprecated (but present + linkable) in OpenSSL 3. FS builds with
-          # -Werror, so -Werror=deprecated-declarations turns those into hard
-          # errors on jammy (OpenSSL 3). Demote deprecation back to a warning;
-          # dpkg-buildflags CFLAGS land after FS's AM_CFLAGS -Werror, so an
-          # append wins. Covers any other OpenSSL-3-deprecated call sites too.
-          export DEB_CFLAGS_APPEND="-Wno-error=deprecated-declarations"
-          export DEB_CXXFLAGS_APPEND="-Wno-error=deprecated-declarations"
+          # FS core (e.g. src/switch_apr.c) calls OpenSSL's legacy MD5_* API,
+          # deprecated (but present + linkable) in OpenSSL 3. FS adds -Werror
+          # UNCONDITIONALLY to SWITCH_AM_CFLAGS (configure.ac, no disable flag),
+          # and ignores dpkg-buildflags (so DEB_CFLAGS_APPEND never reaches the
+          # compile). Append -Wno-error=deprecated-declarations right after each
+          # -Werror in configure.ac so it wins; debian/rules .stamp-bootstrap runs
+          # ./bootstrap.sh (autoreconf) which regenerates configure from this.
+          # Demotes ALL OpenSSL-3 deprecations from errors back to warnings.
+          sed -i 's|APR_ADDTO(SWITCH_AM_CFLAGS, -Werror)|APR_ADDTO(SWITCH_AM_CFLAGS, -Werror)\n    APR_ADDTO(SWITCH_AM_CFLAGS, -Wno-error=deprecated-declarations)|g' configure.ac
+          grep -n "Wno-error=deprecated-declarations" configure.ac || { echo "configure.ac patch did not apply"; exit 1; }
           dpkg-buildpackage -b -uc -us
           mkdir -p out
           mv ../*.deb out/
