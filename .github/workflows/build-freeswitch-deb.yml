@@ -146,16 +146,24 @@ jobs:
           # rejected ("Could not find or use python distutils module"). Silence
           # python warnings for the build so the capture is clean.
           export PYTHONWARNINGS=ignore
-          # FS core (e.g. src/switch_apr.c) calls OpenSSL's legacy MD5_* API,
-          # deprecated (but present + linkable) in OpenSSL 3. FS adds -Werror
-          # UNCONDITIONALLY to SWITCH_AM_CFLAGS (configure.ac, no disable flag),
-          # and ignores dpkg-buildflags (so DEB_CFLAGS_APPEND never reaches the
-          # compile). Append -Wno-error=deprecated-declarations right after each
-          # -Werror in configure.ac so it wins; debian/rules .stamp-bootstrap runs
-          # ./bootstrap.sh (autoreconf) which regenerates configure from this.
-          # Demotes ALL OpenSSL-3 deprecations from errors back to warnings.
-          sed -i 's|APR_ADDTO(SWITCH_AM_CFLAGS, -Werror)|APR_ADDTO(SWITCH_AM_CFLAGS, -Werror)\n    APR_ADDTO(SWITCH_AM_CFLAGS, -Wno-error=deprecated-declarations)|g' configure.ac
-          grep -n "Wno-error=deprecated-declarations" configure.ac || { echo "configure.ac patch did not apply"; exit 1; }
+          # FS core AND its bundled libs (sofia-sip, apr, spandsp, ...) each add
+          # -Werror via their own flag vars, so jammy's newer GCC warnings
+          # (OpenSSL-3 deprecations in switch_apr.c, -Warray-parameter in
+          # switch_core_media.c / sofia-sip su_alloc.c, etc.) become fatal. FS
+          # ignores dpkg-buildflags and hardcodes CC=gcc/CXX=g++ for sub-configures,
+          # so env CFLAGS / a configure.ac patch can't reach every lib. A PATH shim
+          # that appends -Wno-error to every gcc/g++ invocation demotes ALL
+          # warnings-from-errors everywhere in one shot (these are general -Werror,
+          # which a trailing -Wno-error overrides). The code still warns; it builds.
+          SHIM="$RUNNER_TEMP/gccshim"; mkdir -p "$SHIM"
+          for pair in "gcc:/usr/bin/gcc" "cc:/usr/bin/gcc" "g++:/usr/bin/g++" "c++:/usr/bin/g++"; do
+            name="${pair%%:*}"; real="${pair##*:}"
+            printf '#!/bin/bash\nexec %s "$@" -Wno-error\n' "$real" > "$SHIM/$name"
+            chmod +x "$SHIM/$name"
+          done
+          export PATH="$SHIM:$PATH"
+          hash -r
+          gcc --version | head -1; echo "using gcc shim at: $(command -v gcc)"
           dpkg-buildpackage -b -uc -us
           mkdir -p out
           mv ../*.deb out/
