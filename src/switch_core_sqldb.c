@@ -3339,7 +3339,7 @@ static char create_channels_sql[] =
 	"   write_rate  VARCHAR(32),\n"
 	"   write_bit_rate  VARCHAR(32),\n"
 	"   secure VARCHAR(64),\n"
-	"   local_hostname VARCHAR(256),\n"
+	"   hostname VARCHAR(256),\n"
 	"   presence_id VARCHAR(4096),\n"
 	"   presence_data VARCHAR(4096),\n"
 	"   accountcode VARCHAR(256),\n"
@@ -3410,7 +3410,7 @@ static char create_calls_sql[] =
 	"   caller_uuid      VARCHAR(256),\n"
 	"   callee_uuid      VARCHAR(256),\n"
 	"   hostname VARCHAR(256),\n"
-	"   hostname VARCHAR(256)\n"
+	"   local_hostname VARCHAR(256)\n"
 	");\n";
 
 static char create_interfaces_sql[] =

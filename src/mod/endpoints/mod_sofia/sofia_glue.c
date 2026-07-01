@@ -2454,7 +2454,8 @@ int sofia_glue_init_sql(sofia_profile_t *profile)
 		"   rpid            VARCHAR(255),\n"
 		"   sip_to_tag      VARCHAR(255),\n"
 		"   sip_from_tag    VARCHAR(255),\n"
-		"   rcd             INTEGER not null default 0\n"
+		"   rcd             INTEGER not null default 0,\n"
+		"   local_hostname  VARCHAR(255)\n"
 		");\n";
 
 	char sub_sql[] =
