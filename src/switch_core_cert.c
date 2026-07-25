@@ -275,7 +275,12 @@ SWITCH_DECLARE(int) switch_core_gen_certs(const char *prefix)
 		}
 	}
 
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+	/* CRYPTO_mem_ctrl/CRYPTO_MEM_CHECK_ON (OpenSSL's built-in malloc/free leak
+	 * tracker) were removed entirely in OpenSSL 3.0 -- this was diagnostic-only
+	 * instrumentation, not required for mkcert() to function correctly. */
 	CRYPTO_mem_ctrl(CRYPTO_MEM_CHECK_ON);
+#endif
 
 	//bio_err=BIO_new_fp(stderr, BIO_NOCLOSE);
 
