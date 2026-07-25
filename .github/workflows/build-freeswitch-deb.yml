@@ -106,10 +106,22 @@ jobs:
           #   mod_radius_cdr -> bundled freeradius-client runs doxygen+latex
           #                     (latex not installed); RADIUS CDR unused (we use
           #                     ODBC/Galera CDR).
+          #   mod_rayo       -> its test/test_iks binary fails to link on jammy:
+          #                     xmpp_errors.def (an unguarded X-macro-style
+          #                     header) gets compiled into both the module
+          #                     object and the test object, causing "multiple
+          #                     definition" errors, and the test binary itself
+          #                     never links against libfreeswitch (undefined
+          #                     switch_vasprintf/switch_is_number/etc). A
+          #                     pre-existing break in mod_rayo's own build,
+          #                     unrelated to any VoiceFabric change. XMPP/Jingle
+          #                     signaling (mod_rayo's whole purpose) is unused
+          #                     by VoiceFabric, which is SIP-only.
           for m in applications/mod_av languages/mod_python \
                    applications/mod_signalwire codecs/mod_bv codecs/mod_silk \
                    languages/mod_v8 languages/mod_managed applications/mod_cv \
-                   languages/mod_perl event_handlers/mod_radius_cdr; do
+                   languages/mod_perl event_handlers/mod_radius_cdr \
+                   event_handlers/mod_rayo; do
             sed -i "/^avoid_mods=(/a\\  $m" debian/bootstrap.sh
           done
           # Drop the ESL Python/Perl SWIG client bindings (python-esl, libesl-perl).
