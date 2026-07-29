@@ -321,6 +321,12 @@ Build-Depends:
  libtiff5-dev,
  wget, pkg-config,
  yasm,
+# mod_deepgram_transcribe (RTC-12670 - upstream deepgram/freeswitch_modules
+# variant, swapped in for the RTC-custom one): needs libwebsockets at build
+# time (Makefile.am's `pkg-config --libs libwebsockets`), not vendored in
+# libs/ like real upstream FreeSWITCH's mod_verto does - jammy ships a real
+# libwebsockets-dev package, so pull that in rather than vendoring the source.
+ libwebsockets-dev,
 # core codecs
  libogg-dev, libspeex-dev, libspeexdsp-dev,
 # configure options
