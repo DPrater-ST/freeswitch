@@ -1,8 +1,11 @@
-# Build the ServiceTitan RingRx FreeSWITCH .deb packages and publish to S3.
+# Build the ServiceTitan RingRx FreeSWITCH .deb packages, publish to S3, and
+# package those same .debs as a local-dev container image.
 #
 # This is the "CI -> DEB" half of the VoiceFabric FS AMI pipeline:
 #   build-freeswitch-deb (HERE) -> S3 artifact -> telephony-iac packer/freeswitch
 #   (build-vf-freeswitch-ami: fs_artifact_s3_path) -> AMI -> vm-tier/freeswitch ASG.
+# The `container` job installs the same artifacts into ubuntu:22.04 (the AMI's
+# base) and pushes ghcr.io/<owner>/rtc-freeswitch-dev:st-build-<N>.
 #
 # Builds the canonical FreeSWITCH Debian packages from this fork's debian/ tree
 # (bootstrap -> mk-build-deps -> dpkg-buildpackage), bundles the .debs, and uploads
@@ -50,6 +53,10 @@ on:
         default: us-west-2
       create_tag:
         description: "Create + push the st-build-<N> git tag on the built commit."
+        type: boolean
+        default: true
+      publish_image:
+        description: "Push the dev container image to GHCR. Off = build + smoke-test only."
         type: boolean
         default: true
 
@@ -203,6 +210,18 @@ jobs:
           tar czf "out/freeswitch-st-build-${{ inputs.st_build }}.tar.gz" -C out $(cd out && ls *.deb SHA256SUMS)
           ls -la out/
 
+      # Hand-off to the `container` job so the image is built from these exact
+      # .debs, not a second source build. The tarball only duplicates them.
+      - name: Stage .debs for the container job
+        uses: actions/upload-artifact@v4
+        with:
+          name: freeswitch-debs-st-build-${{ inputs.st_build }}
+          path: |
+            out/*.deb
+            out/SHA256SUMS
+          retention-days: 1
+          if-no-files-found: error
+
       - name: AWS login (OIDC)
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
@@ -246,4 +265,62 @@ jobs:
             echo "- artifacts: \`${{ steps.upload.outputs.dest }}\`"
             echo "- **fs_artifact_s3_path** for telephony-iac packer: \`${{ steps.upload.outputs.tarball_key }}\`"
             echo "- bucket: \`${{ inputs.s3_bucket }}\` (region \`${{ inputs.aws_region }}\`)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  container:
+    name: dev image (st-build-${{ inputs.st_build }})
+    needs: build
+    runs-on: ubuntu-22.04
+    # GHCR under the repo owner's namespace needs no secret beyond GITHUB_TOKEN;
+    # the artifacts OIDC role is S3-scoped and cannot reach ECR.
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # Deliberately NOT inputs.ref: the packaging recipe belongs to the branch
+      # this workflow was dispatched from, not to the source ref being built.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch the .debs built above
+        uses: actions/download-artifact@v4
+        with:
+          name: freeswitch-debs-st-build-${{ inputs.st_build }}
+          path: docker/st-dev/debs
+
+      - name: Build image
+        id: image
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+          STB: ${{ inputs.st_build }}
+        run: |
+          set -euo pipefail
+          # amd64 only: debian/bootstrap.sh declares no arm64 Architecture.
+          ref="ghcr.io/${OWNER,,}/rtc-freeswitch-dev:st-build-${STB}"
+          docker build --platform linux/amd64 -t "$ref" docker/st-dev
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke-test image
+        shell: bash
+        run: docker/st-dev/smoke.sh "${{ steps.image.outputs.ref }}"
+
+      - name: Push to GHCR
+        if: ${{ inputs.publish_image }}
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "${{ steps.image.outputs.ref }}"
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### RingRx FreeSWITCH dev image"
+            echo "- image: \`${{ steps.image.outputs.ref }}\` (linux/amd64)"
+            echo "- pushed: \`${{ inputs.publish_image }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
