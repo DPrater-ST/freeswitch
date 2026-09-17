@@ -210,6 +210,32 @@ jobs:
           tar czf "out/freeswitch-st-build-${{ inputs.st_build }}.tar.gz" -C out $(cd out && ls *.deb SHA256SUMS)
           ls -la out/
 
+      # Lets telephony-iac's ship-freeswitch-build name the AMI from the source that
+      # produced the bundle, instead of resolving a tag in this repo at ship time.
+      - name: Write build-info.json
+        shell: bash
+        env:
+          STB:      ${{ inputs.st_build }}
+          REF:      ${{ inputs.ref }}
+          CODENAME: ${{ inputs.ubuntu_codename }}
+        run: |
+          set -euo pipefail
+          BASE="$(sed -n 's/^AC_INIT(\[freeswitch\], *\[\([^]]*\)\].*/\1/p' configure.ac | head -1)"
+          BASE="${BASE%-dev}"; BASE="${BASE%-release}"
+          [ -n "$BASE" ] || { echo "::error::could not read the version from configure.ac"; exit 1; }
+          cat > out/build-info.json <<EOF
+          {
+            "st_build": "${STB}",
+            "freeswitch_version": "${BASE}-st-build-${STB}",
+            "configure_ac_version": "${BASE}",
+            "ref": "${REF}",
+            "sha": "${GITHUB_SHA}",
+            "ubuntu_codename": "${CODENAME}",
+            "built_by_run": "${GITHUB_RUN_ID}"
+          }
+          EOF
+          cat out/build-info.json
+
       # Hand-off to the `container` job so the image is built from these exact
       # .debs, not a second source build. The tarball only duplicates them.
       - name: Stage .debs for the container job
@@ -240,7 +266,8 @@ jobs:
           set -euo pipefail
           DEST="s3://${BUCKET}/${PREFIX}/st-build-${STB}"
           aws s3 cp out/ "${DEST}/" --recursive --region "$REGION" \
-            --exclude "*" --include "*.deb" --include "SHA256SUMS" --include "*.tar.gz"
+            --exclude "*" --include "*.deb" --include "SHA256SUMS" --include "*.tar.gz" \
+            --include "build-info.json"
           TARBALL_KEY="${PREFIX}/st-build-${STB}/freeswitch-st-build-${STB}.tar.gz"
           echo "tarball_key=${TARBALL_KEY}" >> "$GITHUB_OUTPUT"
           echo "dest=${DEST}" >> "$GITHUB_OUTPUT"
