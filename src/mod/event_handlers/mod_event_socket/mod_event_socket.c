@@ -1617,6 +1617,12 @@ static void *SWITCH_THREAD_FUNC api_exec(switch_thread_t *thread, void *obj)
 
 }
 
+/* An allow-listed listener may only drive a channel through commands its list names. */
+static switch_bool_t auth_listener_command(listener_t *listener, const char *cmd)
+{
+	return !listener->allowed_api_hash || switch_core_hash_find(listener->allowed_api_hash, cmd);
+}
+
 static switch_bool_t auth_api_command(listener_t *listener, const char *api_cmd, const char *arg)
 {
 	const char *check_cmd = api_cmd;
@@ -1991,6 +1997,11 @@ static switch_status_t parse_command(listener_t *listener, switch_event_t **even
 	}
 
 	if (listener->session && !strncasecmp(cmd, "resume", 6)) {
+		if (!auth_listener_command(listener, "resume")) {
+			switch_snprintf(reply, reply_len, "-ERR permission denied");
+			goto done;
+		}
+
 		switch_set_flag_locked(listener, LFLAG_RESUME);
 		switch_channel_set_variable(switch_core_session_get_channel(listener->session), "socket_resume", "true");
 		switch_snprintf(reply, reply_len, "+OK");
@@ -2126,6 +2137,11 @@ static switch_status_t parse_command(listener_t *listener, switch_event_t **even
 		char *onoff = cmd + 13;
 		switch_channel_t *channel;
 
+		if (!auth_listener_command(listener, "divert_events")) {
+			switch_snprintf(reply, reply_len, "-ERR permission denied");
+			goto done;
+		}
+
 		if (!listener->session) {
 			switch_snprintf(reply, reply_len, "-ERR not controlling a session.");
 			goto done;
@@ -2166,6 +2182,11 @@ static switch_status_t parse_command(listener_t *listener, switch_event_t **even
 		char *uuid = cmd + 7;
 		const char *async_var = switch_event_get_header(*event, "async");
 		int async = switch_test_flag(listener, LFLAG_ASYNC);
+
+		if (!auth_listener_command(listener, "sendmsg")) {
+			switch_snprintf(reply, reply_len, "-ERR permission denied");
+			goto done;
+		}
 
 		if (switch_true(async_var)) {
 			async = 1;
@@ -2226,6 +2247,12 @@ static switch_status_t parse_command(listener_t *listener, switch_event_t **even
 		char *ename;
 		const char *uuid = NULL;
 		char uuid_str[SWITCH_UUID_FORMATTED_LENGTH + 1];
+
+		if (!auth_listener_command(listener, "sendevent")) {
+			switch_snprintf(reply, reply_len, "-ERR permission denied");
+			goto done;
+		}
+
 		switch_uuid_str(uuid_str, sizeof(uuid_str));
 
 		switch_event_add_header_string(*event, SWITCH_STACK_BOTTOM, "Event-UUID", uuid_str);
